@@ -20,7 +20,7 @@ def run_vllm_worker(model_name: str, queue_name: str):
         asyncio.run(worker.run())
         
     except ImportError as e:
-        console.print(f"[red]vLLM not installed. Install with: pip install vllm[/red]")
+        console.print("[red]vLLM not installed. Install with: pip install vllm[/red]")
         console.print(f"[dim]Error: {e}[/dim]")
         sys.exit(1)
     except KeyboardInterrupt:
@@ -45,7 +45,7 @@ def run_dummy_worker(queue_name: str, concurrency: int = None):
         if concurrency:
             console.print(f"[dim]Concurrency set to {concurrency} jobs at a time[/dim]")
         else:
-            console.print(f"[dim]Using default concurrency (VLLM_QUEUE_PREFETCH)[/dim]")
+            console.print("[dim]Using default concurrency (VLLM_QUEUE_PREFETCH)[/dim]")
         
         worker = DummyWorker(queue_name, concurrency=concurrency)
         asyncio.run(worker.run())

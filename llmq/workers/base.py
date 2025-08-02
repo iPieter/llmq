@@ -1,12 +1,10 @@
 import asyncio
-import logging
 import signal
 import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional
 
-import aio_pika
 from aio_pika.abc import AbstractIncomingMessage
 
 from llmq.core.config import get_config

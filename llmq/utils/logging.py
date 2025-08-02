@@ -1,7 +1,6 @@
 import logging
 import logging.config
 import sys
-from typing import Dict, Any
 
 from llmq.core.config import get_config
 

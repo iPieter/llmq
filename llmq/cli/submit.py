@@ -3,10 +3,9 @@ import json
 import sys
 import signal
 import time
-from typing import Dict, Any, TextIO
+from typing import Dict
 from pathlib import Path
 
-import click
 from rich.console import Console
 from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, MofNCompleteColumn, TimeElapsedColumn
 from aio_pika.abc import AbstractIncomingMessage

@@ -2,7 +2,6 @@ import pytest
 from unittest.mock import AsyncMock, patch
 
 from llmq.core.broker import BrokerManager
-from llmq.core.models import Job, Result, QueueStats
 
 # Apply asyncio marker to all async test methods in this module
 pytestmark = pytest.mark.asyncio

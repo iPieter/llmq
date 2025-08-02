@@ -1,8 +1,6 @@
 import asyncio
-import sys
 from datetime import datetime
 
-import click
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
@@ -23,8 +21,9 @@ async def check_connection_async():
     finally:
         try:
             await broker.disconnect()
-        except:
-            pass
+        except Exception:
+            # Ignore disconnection errors during cleanup
+            pass            
 
 
 async def get_queue_stats_async(queue_name: str):
@@ -216,7 +215,6 @@ def show_errors(queue_name: str, limit: int):
             timestamp = msg.get("timestamp", "Unknown")
             
             # Try to extract error info from job data
-            job_data = msg.get("job_data", {})
             error_details = "Job failed during processing"
             
             if isinstance(timestamp, datetime):
