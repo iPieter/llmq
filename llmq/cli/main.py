@@ -23,6 +23,7 @@ def worker():
 def submit(queue_name: str, jobs_file: str, timeout: int):
     """Submit jobs from JSONL file to queue"""
     from llmq.cli.submit import run_submit
+
     run_submit(queue_name, jobs_file, timeout)
 
 
@@ -31,6 +32,7 @@ def submit(queue_name: str, jobs_file: str, timeout: int):
 def status(queue_name: str = None):
     """Show connection status or queue statistics"""
     from llmq.cli.monitor import show_status, show_connection_status
+
     if queue_name:
         show_status(queue_name)
     else:
@@ -42,6 +44,7 @@ def status(queue_name: str = None):
 def health(queue_name: str):
     """Basic health check for queue"""
     from llmq.cli.monitor import check_health
+
     check_health(queue_name)
 
 
@@ -51,6 +54,7 @@ def health(queue_name: str):
 def errors(queue_name: str, limit: int):
     """Show recent errors from dead letter queue"""
     from llmq.cli.monitor import show_errors
+
     show_errors(queue_name, limit)
 
 
@@ -60,15 +64,23 @@ def errors(queue_name: str, limit: int):
 def worker_run(model_name: str, queue_name: str):
     """Run vLLM worker using all visible GPUs"""
     from llmq.cli.worker import run_vllm_worker
+
     run_vllm_worker(model_name, queue_name)
 
 
 @worker.command("dummy")
 @click.argument("queue_name")
-@click.option("--concurrency", "-c", default=None, type=int, help="Number of jobs to process concurrently")
+@click.option(
+    "--concurrency",
+    "-c",
+    default=None,
+    type=int,
+    help="Number of jobs to process concurrently",
+)
 def worker_dummy(queue_name: str, concurrency: int):
     """Run dummy worker for testing (no vLLM required)"""
     from llmq.cli.worker import run_dummy_worker
+
     run_dummy_worker(queue_name, concurrency)
 
 
@@ -79,6 +91,7 @@ def worker_dummy(queue_name: str, concurrency: int):
 def worker_filter(queue_name: str, filter_field: str, filter_value: str):
     """Run filter worker for simple job filtering"""
     from llmq.cli.worker import run_filter_worker
+
     run_filter_worker(queue_name, filter_field, filter_value)
 
 

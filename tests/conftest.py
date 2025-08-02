@@ -23,11 +23,7 @@ def mock_config():
 @pytest.fixture
 def sample_job():
     """Sample job for testing."""
-    return Job(
-        id="test-job-001",
-        prompt="Echo '{text}' back",
-        text="Hello World"
-    )
+    return Job(id="test-job-001", prompt="Echo '{text}' back", text="Hello World")
 
 
 @pytest.fixture
@@ -39,7 +35,7 @@ def sample_result():
         result="echo Hello World",
         worker_id="test-worker-001",
         duration_ms=150.5,
-        timestamp=datetime(2025, 1, 1, 12, 0, 0)
+        timestamp=datetime(2025, 1, 1, 12, 0, 0),
     )
 
 
@@ -55,7 +51,7 @@ def sample_queue_stats():
         message_bytes=1024,
         message_bytes_ready=1000,
         message_bytes_unacknowledged=24,
-        stats_source="management_api"
+        stats_source="management_api",
     )
 
 
@@ -110,22 +106,31 @@ def mock_rabbitmq_exchange():
 
 
 @pytest.fixture
-def mock_broker_manager(mock_config, mock_rabbitmq_connection, mock_rabbitmq_channel, 
-                       mock_rabbitmq_queue, mock_rabbitmq_exchange):
+def mock_broker_manager(
+    mock_config,
+    mock_rabbitmq_connection,
+    mock_rabbitmq_channel,
+    mock_rabbitmq_queue,
+    mock_rabbitmq_exchange,
+):
     """Mock BrokerManager for testing."""
     from unittest.mock import patch
-    
-    with patch('llmq.core.broker.BrokerManager') as mock_broker:
+
+    with patch("llmq.core.broker.BrokerManager") as mock_broker:
         broker_instance = AsyncMock()
         broker_instance.config = mock_config
         broker_instance.connection = mock_rabbitmq_connection
         broker_instance.channel = mock_rabbitmq_channel
-        
+
         # Mock methods
         broker_instance.connect = AsyncMock()
         broker_instance.disconnect = AsyncMock()
         broker_instance.setup_queue_infrastructure = AsyncMock(
-            return_value=(mock_rabbitmq_queue, mock_rabbitmq_exchange, mock_rabbitmq_queue)
+            return_value=(
+                mock_rabbitmq_queue,
+                mock_rabbitmq_exchange,
+                mock_rabbitmq_queue,
+            )
         )
         broker_instance.publish_job = AsyncMock()
         broker_instance.publish_result = AsyncMock()
@@ -133,7 +138,7 @@ def mock_broker_manager(mock_config, mock_rabbitmq_connection, mock_rabbitmq_cha
         broker_instance.consume_results = AsyncMock()
         broker_instance.get_queue_stats = AsyncMock()
         broker_instance.get_failed_messages = AsyncMock(return_value=[])
-        
+
         mock_broker.return_value = broker_instance
         yield broker_instance
 
@@ -148,13 +153,13 @@ def event_loop():
 
 class MockAsyncContextManager:
     """Helper for mocking async context managers."""
-    
+
     def __init__(self, return_value=None):
         self.return_value = return_value
-    
+
     async def __aenter__(self):
         return self.return_value
-    
+
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         pass
 
@@ -163,8 +168,8 @@ class MockAsyncContextManager:
 def mock_httpx_client():
     """Mock httpx.AsyncClient for testing management API calls."""
     from unittest.mock import patch
-    
-    with patch('httpx.AsyncClient') as mock_client:
+
+    with patch("httpx.AsyncClient") as mock_client:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -174,11 +179,11 @@ def mock_httpx_client():
             "consumers": 3,
             "message_bytes": 1024,
             "message_bytes_ready": 1000,
-            "message_bytes_unacknowledged": 24
+            "message_bytes_unacknowledged": 24,
         }
-        
+
         mock_client_instance = AsyncMock()
         mock_client_instance.get = AsyncMock(return_value=mock_response)
         mock_client.return_value = MockAsyncContextManager(mock_client_instance)
-        
+
         yield mock_client_instance

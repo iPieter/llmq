@@ -6,23 +6,29 @@ from pydantic import BaseModel, Field
 class Job(BaseModel):
     id: str = Field(..., description="Unique job identifier")
     prompt: str = Field(..., description="Template prompt with placeholders")
-    
+
     class Config:
         extra = "allow"
-    
+
     def get_formatted_prompt(self) -> str:
         """Format the prompt template with job data, excluding id and prompt fields."""
-        format_data = {k: v for k, v in self.dict().items() if k not in ["id", "prompt"]}
+        format_data = {
+            k: v for k, v in self.dict().items() if k not in ["id", "prompt"]
+        }
         return self.prompt.format(**format_data)
 
 
 class Result(BaseModel):
     id: str = Field(..., description="Job ID this result corresponds to")
-    prompt: str = Field(..., description="The actual formatted prompt that was processed")
+    prompt: str = Field(
+        ..., description="The actual formatted prompt that was processed"
+    )
     result: str = Field(..., description="Generated text result from vLLM")
     worker_id: str = Field(..., description="ID of the worker that processed this job")
     duration_ms: float = Field(..., description="Processing duration in milliseconds")
-    timestamp: datetime = Field(default_factory=datetime.utcnow, description="When the result was generated")
+    timestamp: datetime = Field(
+        default_factory=datetime.utcnow, description="When the result was generated"
+    )
 
 
 class QueueStats(BaseModel):
