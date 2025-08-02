@@ -11,9 +11,6 @@ license = {text = "MIT"}
 readme = "README_PYPI.md"
 requires-python = ">=3.9"
 keywords = ["llm", "queue", "vllm", "gpu", "inference", "rabbitmq", "async"]
-homepage = "https://github.com/pieter/llmq"
-repository = "https://github.com/pieter/llmq"
-documentation = "https://github.com/pieter/llmq#readme"
 dependencies = [
     "vllm>=0.7.0",
     "transformers>=4.47.0",
@@ -53,6 +50,12 @@ dev = [
     "build>=1.0.0",
     "twine>=4.0.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/ipieter/llmq"
+Repository = "https://github.com/ipieter/llmq"
+Documentation = "https://github.com/ipieter/llmq#readme"
+Issues = "https://github.com/ipieter/llmq/issues"
 
 [project.scripts]
 llmq = "llmq.cli.main:cli"
