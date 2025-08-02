@@ -1,4 +1,5 @@
 import click
+from typing import Optional
 from llmq import __version__
 
 
@@ -29,7 +30,7 @@ def submit(queue_name: str, jobs_file: str, timeout: int):
 
 @cli.command()
 @click.argument("queue_name", required=False)
-def status(queue_name: str = None):
+def status(queue_name: Optional[str] = None):
     """Show connection status or queue statistics"""
     from llmq.cli.monitor import show_status, show_connection_status
 

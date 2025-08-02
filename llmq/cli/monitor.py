@@ -52,11 +52,13 @@ async def check_queue_health_async(queue_name: str):
         is_healthy = True
         issues = []
 
-        if stats.consumer_count == 0:
+        if stats.consumer_count is not None and stats.consumer_count == 0:
             is_healthy = False
             issues.append("No active consumers")
 
-        if stats.message_count > 10000:  # Configurable threshold
+        if (
+            stats.message_count is not None and stats.message_count > 10000
+        ):  # Configurable threshold
             issues.append(f"High message backlog: {stats.message_count}")
 
         return is_healthy, issues, stats

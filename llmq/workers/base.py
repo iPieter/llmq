@@ -4,6 +4,7 @@ import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional
+from aio_pika.abc import AbstractExchange
 
 from aio_pika.abc import AbstractIncomingMessage
 
@@ -32,7 +33,7 @@ class BaseWorker(ABC):
         self.logger = setup_logging(f"llmq.worker.{self.worker_id}", structured=True)
 
         self.broker: Optional[BrokerManager] = None
-        self.results_exchange = None
+        self.results_exchange: Optional[AbstractExchange] = None
         self.running = False
         self.jobs_processed = 0
         self.total_duration_ms = 0.0
@@ -78,7 +79,7 @@ class BaseWorker(ABC):
         await self.broker.connect()
 
         # Override prefetch if concurrency is specified
-        if self.concurrency is not None:
+        if self.concurrency is not None and self.broker.channel is not None:
             await self.broker.channel.set_qos(prefetch_count=self.concurrency)
             self.logger.info(f"Set concurrency to {self.concurrency} jobs")
 
@@ -100,7 +101,8 @@ class BaseWorker(ABC):
             )
 
             # Start consuming jobs
-            await self.broker.consume_jobs(self.queue_name, self._process_message)
+            if self.broker is not None:
+                await self.broker.consume_jobs(self.queue_name, self._process_message)
 
             # Keep the worker running
             while self.running:
@@ -140,7 +142,8 @@ class BaseWorker(ABC):
             )
 
             # Publish result
-            await self.broker.publish_result(self.results_exchange, result)
+            if self.broker is not None and self.results_exchange is not None:
+                await self.broker.publish_result(self.results_exchange, result)
 
             # Acknowledge message
             await message.ack()

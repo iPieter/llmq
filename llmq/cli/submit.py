@@ -3,7 +3,7 @@ import json
 import sys
 import signal
 import time
-from typing import Dict
+from typing import Dict, Optional
 from pathlib import Path
 
 from rich.console import Console
@@ -33,7 +33,7 @@ class JobSubmitter:
         self.config = get_config()
         self.logger = setup_logging("llmq.submit")
 
-        self.broker: BrokerManager = None
+        self.broker: Optional[BrokerManager] = None
         self.console = Console(file=sys.stderr)
         self.running = True
         self.shutting_down = False
@@ -130,7 +130,6 @@ class JobSubmitter:
             TimeElapsedColumn(),
             console=self.console,
         ) as progress:
-
             submit_task = progress.add_task(
                 "Submitting jobs", total=total_lines, rate=0.0
             )
@@ -203,9 +202,10 @@ class JobSubmitter:
     async def _submit_single_job(self, job: Job):
         """Submit a single job and track it."""
         try:
-            await self.broker.publish_job(self.queue_name, job)
-            self.submitted_count += 1
-            self.pending_jobs[job.id] = time.time()
+            if self.broker is not None:
+                await self.broker.publish_job(self.queue_name, job)
+                self.submitted_count += 1
+                self.pending_jobs[job.id] = time.time()
         except Exception as e:
             self.logger.error(f"Failed to submit job {job.id}: {e}")
 

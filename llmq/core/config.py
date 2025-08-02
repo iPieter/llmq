@@ -25,9 +25,9 @@ class Config(BaseModel):
     )
 
     vllm_max_num_seqs: Optional[int] = Field(
-        default_factory=lambda: int(os.getenv("VLLM_MAX_NUM_SEQS"))
-        if os.getenv("VLLM_MAX_NUM_SEQS")
-        else None,
+        default_factory=lambda: (
+            int(value) if (value := os.getenv("VLLM_MAX_NUM_SEQS")) else None
+        ),
         description="Maximum number of sequences in a batch",
     )
 

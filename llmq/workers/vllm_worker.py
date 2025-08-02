@@ -1,8 +1,8 @@
 import os
 from typing import Optional
 
-from vllm import AsyncLLMEngine, SamplingParams
-from vllm.engine.arg_utils import AsyncEngineArgs
+from vllm import AsyncLLMEngine, SamplingParams  # type: ignore
+from vllm.engine.arg_utils import AsyncEngineArgs  # type: ignore
 
 from llmq.core.models import Job
 from llmq.workers.base import BaseWorker
@@ -72,9 +72,12 @@ class VLLMWorker(BaseWorker):
         )
 
         # Generate response using vLLM
-        results = await self.engine.generate(
-            formatted_prompt, sampling_params, request_id=job.id
-        )
+        if self.engine is not None:
+            results = await self.engine.generate(
+                formatted_prompt, sampling_params, request_id=job.id
+            )
+        else:
+            raise RuntimeError("vLLM engine not initialized")
 
         if not results:
             raise ValueError("No results generated")

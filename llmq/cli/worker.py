@@ -1,5 +1,6 @@
 import asyncio
 import sys
+from typing import Optional
 
 from rich.console import Console
 from llmq.utils.logging import setup_logging
@@ -34,7 +35,7 @@ def run_vllm_worker(model_name: str, queue_name: str):
         sys.exit(1)
 
 
-def run_dummy_worker(queue_name: str, concurrency: int = None):
+def run_dummy_worker(queue_name: str, concurrency: Optional[int] = None):
     """Run dummy worker for testing (no vLLM required)."""
     console = Console()
 
