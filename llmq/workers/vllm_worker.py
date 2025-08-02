@@ -73,9 +73,11 @@ class VLLMWorker(BaseWorker):
 
         # Generate response using vLLM
         if self.engine is not None:
-            results = await self.engine.generate(
+            results = []
+            async for output in self.engine.generate(
                 formatted_prompt, sampling_params, request_id=job.id
-            )
+            ):
+                results.append(output)
         else:
             raise RuntimeError("vLLM engine not initialized")
 
