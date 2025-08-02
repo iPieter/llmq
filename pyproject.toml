@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=45", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "llmq"
+version = "0.0.1"
+description = "High-Performance vLLM Job Queue Package"
+authors = [{name = "Pieter", email = "pieter@example.com"}]
+license = {text = "MIT"}
+readme = "README_PYPI.md"
+requires-python = ">=3.9"
+keywords = ["llm", "queue", "vllm", "gpu", "inference", "rabbitmq", "async"]
+homepage = "https://github.com/pieter/llmq"
+repository = "https://github.com/pieter/llmq"
+documentation = "https://github.com/pieter/llmq#readme"
+dependencies = [
+    "vllm>=0.7.0",
+    "transformers>=4.47.0",
+    "aio-pika>=9.5.0",
+    "click>=8.1.7",
+    "pydantic>=2.10.0",
+    "rich>=13.9.0",
+    "python-dotenv>=1.0.1",
+    "httpx>=0.27.0",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-mock>=3.12.0",
+    "pytest-cov>=6.0.0",
+    "faker>=30.0.0",
+]
+dev = [
+    "llmq[test]",
+    "black>=24.0.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "bandit[toml]>=1.7.0",
+    "safety>=3.0.0",
+    "build>=1.0.0",
+    "twine>=4.0.0",
+]
+
+[project.scripts]
+llmq = "llmq.cli.main:cli"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["llmq*"]

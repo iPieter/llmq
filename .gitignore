@@ -165,3 +165,6 @@ Thumbs.db
 *.temp
 temp/
 tmp/
+
+# Claude
+CLAUDE.md
