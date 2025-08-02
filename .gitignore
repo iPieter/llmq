@@ -134,6 +134,9 @@ results.jsonl
 progress.log
 test_jobs.jsonl
 
+# setuptools-scm generated files
+llmq/_version.py
+
 # Model cache
 .cache/
 models/

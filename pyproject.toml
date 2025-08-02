@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=45", "setuptools-scm[toml]>=6.2", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "llmq"
-version = "0.0.1"
+dynamic = ["version"]
 description = "High-Performance vLLM Job Queue Package"
 authors = [{name = "Pieter", email = "pieter@example.com"}]
 license = {text = "MIT"}
@@ -49,6 +49,7 @@ dev = [
     "safety>=3.0.0",
     "build>=1.0.0",
     "twine>=4.0.0",
+    "setuptools-scm[toml]>=6.2",
 ]
 
 [project.urls]
@@ -63,3 +64,6 @@ llmq = "llmq.cli.main:cli"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["llmq*"]
+
+[tool.setuptools_scm]
+write_to = "llmq/_version.py"
