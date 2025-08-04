@@ -3,8 +3,9 @@ import json
 import sys
 import signal
 import time
-from typing import Dict, Optional
+from typing import Dict, Optional, Iterator, Any
 from pathlib import Path
+import uuid
 
 from rich.console import Console
 from rich.progress import (
@@ -26,10 +27,19 @@ from llmq.utils.logging import setup_logging
 class JobSubmitter:
     """Handles job submission and result streaming."""
 
-    def __init__(self, queue_name: str, jobs_file: str, timeout: int = 300):
+    def __init__(
+        self,
+        queue_name: str,
+        jobs_source: str,
+        timeout: int = 300,
+        column_mapping: Optional[Dict[str, str]] = None,
+        max_samples: Optional[int] = None,
+    ):
         self.queue_name = queue_name
-        self.jobs_file = Path(jobs_file)
+        self.jobs_source = jobs_source
         self.timeout = timeout
+        self.column_mapping = column_mapping or {}
+        self.max_samples = max_samples
         self.config = get_config()
         self.logger = setup_logging("llmq.submit")
 
@@ -47,7 +57,91 @@ class JobSubmitter:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
-    def _signal_handler(self, signum, frame):
+        # Detect if source is a dataset or file
+        self.is_dataset = self._is_huggingface_dataset()
+        if self.is_dataset:
+            self.console.print(
+                f"[blue]Detected Hugging Face dataset: {self.jobs_source}[/blue]"
+            )
+        else:
+            self.jobs_file = Path(self.jobs_source)
+
+    def _is_huggingface_dataset(self) -> bool:
+        """Check if the source appears to be a Hugging Face dataset."""
+        # If it's a file path that exists, it's not a dataset
+        if Path(self.jobs_source).exists():
+            return False
+
+        # Check if it looks like a dataset identifier (contains / or doesn't end with common file extensions)
+        if "/" in self.jobs_source or not any(
+            self.jobs_source.endswith(ext) for ext in [".jsonl", ".json", ".txt"]
+        ):
+            return True
+
+        return False
+
+    def _load_dataset_iterator(self) -> Iterator[Dict[str, Any]]:
+        """Load and iterate through a Hugging Face dataset."""
+        try:
+            from datasets import load_dataset
+        except ImportError:
+            raise ImportError(
+                "datasets package is required for Hugging Face dataset support. Install with: pip install datasets"
+            )
+
+        self.console.print(f"[blue]Loading dataset: {self.jobs_source}[/blue]")
+
+        # Load dataset in streaming mode for memory efficiency
+        try:
+            dataset = load_dataset(self.jobs_source, streaming=True, split="train")
+        except Exception:
+            # Try without specifying split
+            self.console.print(
+                "[yellow]Failed to load 'train' split, trying default...[/yellow]"
+            )
+            dataset = load_dataset(self.jobs_source, streaming=True)
+            # Take the first split available
+            dataset = next(iter(dataset.values()))
+
+        self.console.print("[green]Dataset loaded successfully[/green]")
+
+        count = 0
+        for item in dataset:
+            if self.max_samples and count >= self.max_samples:
+                break
+            count += 1
+            yield item
+
+    def _create_job_from_dataset_item(self, item: Dict[str, Any], index: int) -> Job:
+        """Create a Job from a dataset item using column mapping."""
+        job_data: Dict[str, Any] = {"id": f"dataset-{index:08d}-{uuid.uuid4().hex[:8]}"}
+
+        # Apply column mapping
+        for job_field, dataset_column in self.column_mapping.items():
+            if dataset_column in item:
+                job_data[job_field] = item[dataset_column]
+            else:
+                self.logger.warning(
+                    f"Column '{dataset_column}' not found in dataset item. Available columns: {list(item.keys())}"
+                )
+
+        # If no mapping provided and 'text' column exists, use it as prompt
+        if not self.column_mapping and "text" in item:
+            job_data["prompt"] = str(item["text"])
+
+        # Add any unmapped fields as extra data (for template variables)
+        for key, value in item.items():
+            if (
+                key not in [v for v in self.column_mapping.values()]
+                and key not in job_data
+            ):
+                # Only add simple types that can be used in templates
+                if isinstance(value, (str, int, float, bool)):
+                    job_data[key] = value
+
+        return Job(**job_data)
+
+    def _signal_handler(self, signum: int, frame: Any) -> None:
         """Handle Ctrl+C gracefully - stop submitting, wait for pending results."""
         if not self.shutting_down:
             self.console.print(
@@ -118,6 +212,81 @@ class JobSubmitter:
                 await self.broker.disconnect()
 
     async def _submit_jobs(self):
+        """Submit jobs from dataset or JSONL file."""
+        if self.is_dataset:
+            await self._submit_jobs_from_dataset()
+        else:
+            await self._submit_jobs_from_file()
+
+    async def _submit_jobs_from_dataset(self):
+        """Submit jobs from Hugging Face dataset."""
+
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            TextColumn("Processed: {task.completed}"),
+            TextColumn("Rate: {task.fields[rate]:.1f} jobs/sec"),
+            TimeElapsedColumn(),
+            console=self.console,
+        ) as progress:
+            submit_task = progress.add_task(
+                "Submitting from dataset", total=None, rate=0.0
+            )
+
+            chunk = []
+            index = 0
+
+            try:
+                for item in self._load_dataset_iterator():
+                    if not self.running:
+                        break
+
+                    try:
+                        job = self._create_job_from_dataset_item(item, index)
+                        chunk.append(job)
+                        index += 1
+
+                        # Process in chunks
+                        if len(chunk) >= self.config.chunk_size:
+                            await self._submit_chunk(chunk)
+                            chunk = []
+
+                            # Update progress
+                            rate = (
+                                self.submitted_count / (time.time() - self.start_time)
+                                if time.time() > self.start_time
+                                else 0
+                            )
+                            progress.update(submit_task, completed=index, rate=rate)
+
+                            # Small delay to prevent overwhelming RabbitMQ
+                            await asyncio.sleep(0.01)
+
+                    except Exception as e:
+                        self.logger.error(f"Error processing dataset item {index}: {e}")
+                        continue
+
+                # Submit remaining jobs
+                if chunk and self.running:
+                    await self._submit_chunk(chunk)
+
+                # Final progress update
+                rate = (
+                    self.submitted_count / (time.time() - self.start_time)
+                    if time.time() > self.start_time
+                    else 0
+                )
+                progress.update(submit_task, completed=index, rate=rate)
+
+            except Exception as e:
+                self.console.print(f"[red]Error loading dataset: {e}[/red]")
+                raise
+
+        self.console.print(
+            f"[green]Submitted {self.submitted_count} jobs from dataset '{self.jobs_source}' to queue '{self.queue_name}'[/green]"
+        )
+
+    async def _submit_jobs_from_file(self):
         """Submit jobs from JSONL file."""
         total_lines = self._count_lines()
 
@@ -245,6 +414,9 @@ class JobSubmitter:
 
     def _count_lines(self) -> int:
         """Count total lines in the jobs file."""
+        if self.is_dataset:
+            return self.max_samples or 0  # Can't easily count dataset items
+
         try:
             with open(self.jobs_file, "r") as f:
                 return sum(1 for line in f if line.strip())
@@ -252,9 +424,17 @@ class JobSubmitter:
             return 0
 
 
-def run_submit(queue_name: str, jobs_file: str, timeout: int = 300):
+def run_submit(
+    queue_name: str,
+    jobs_source: str,
+    timeout: int = 300,
+    column_mapping: Optional[Dict[str, str]] = None,
+    max_samples: Optional[int] = None,
+):
     """Run the job submission process."""
-    submitter = JobSubmitter(queue_name, jobs_file, timeout)
+    submitter = JobSubmitter(
+        queue_name, jobs_source, timeout, column_mapping, max_samples
+    )
 
     try:
         asyncio.run(submitter.run())
