@@ -1,6 +1,8 @@
 # llmq
 
-High-Performance Inference Queueing
+High-Performance Inference Queueing.
+
+> **Note**: API may change until v0.1 as I'm experimenting with features.
 
 ## Quick Start
 

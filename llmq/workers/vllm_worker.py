@@ -63,23 +63,36 @@ class VLLMWorker(BaseWorker):
 
     async def _process_job(self, job: Job) -> str:
         """Process job using vLLM engine."""
-        # Format prompt
-        formatted_prompt = job.get_formatted_prompt()
-
         # Configure sampling parameters
         sampling_params = SamplingParams(
             temperature=0.7, max_tokens=1024, stop=["\n\n"]
         )
 
-        # Generate response using vLLM
-        if self.engine is not None:
-            results = []
+        if self.engine is None:
+            raise RuntimeError("vLLM engine not initialized")
+
+        results = []
+
+        # Use chat API if chat_mode is enabled or messages are provided
+        if job.chat_mode or job.messages:
+            if not job.messages:
+                raise ValueError("Chat mode enabled but no messages provided")
+
+            formatted_messages = job.get_formatted_messages()
+
+            # Use chat method for chat-based models
+            async for output in self.engine.chat(
+                formatted_messages, sampling_params, request_id=job.id
+            ):
+                results.append(output)
+        else:
+            # Use traditional generate method
+            formatted_prompt = job.get_formatted_prompt()
+
             async for output in self.engine.generate(
                 formatted_prompt, sampling_params, request_id=job.id
             ):
                 results.append(output)
-        else:
-            raise RuntimeError("vLLM engine not initialized")
 
         if not results:
             raise ValueError("No results generated")
