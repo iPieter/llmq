@@ -1,5 +1,5 @@
 import os
-from typing import Optional, List, Dict, Any
+from typing import Optional
 
 from vllm import AsyncLLMEngine, SamplingParams  # type: ignore
 from vllm.engine.arg_utils import AsyncEngineArgs  # type: ignore
@@ -26,49 +26,56 @@ class VLLMWorker(BaseWorker):
 
     async def _initialize_processor(self) -> None:
         """Initialize vLLM engine with all visible GPUs."""
-        self.logger.info(f"Initializing vLLM engine for model {self.model_name}")
+        self.logger.info("_initialize_processor() called")
+        try:
+            self.logger.info(f"Initializing vLLM engine for model {self.model_name}")
 
-        # Count visible GPUs
-        cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
-        if cuda_visible:
-            gpu_count = len(
-                [x.strip() for x in cuda_visible.split(",") if x.strip().isdigit()]
-            )
-        else:
-            # Try to detect available GPUs
-            try:
-                import torch
-
-                gpu_count = (
-                    torch.cuda.device_count() if torch.cuda.is_available() else 1
+            # Count visible GPUs
+            cuda_visible = os.environ.get("CUDA_VISIBLE_DEVICES")
+            if cuda_visible:
+                gpu_count = len(
+                    [x.strip() for x in cuda_visible.split(",") if x.strip().isdigit()]
                 )
-            except ImportError:
-                gpu_count = 1
+            else:
+                # Try to detect available GPUs
+                try:
+                    import torch
 
-        self.logger.info(f"Using {gpu_count} GPU(s): {cuda_visible or 'auto-detected'}")
+                    gpu_count = (
+                        torch.cuda.device_count() if torch.cuda.is_available() else 1
+                    )
+                except ImportError:
+                    gpu_count = 1
 
-        # Configure vLLM engine args
-        engine_args = AsyncEngineArgs(
-            model=self.model_name,
-            gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
-            tensor_parallel_size=gpu_count,  # Use all visible GPUs
-            disable_log_stats=True,
-        )
+            self.logger.info(
+                f"Using {gpu_count} GPU(s): {cuda_visible or 'auto-detected'}"
+            )
 
-        if self.config.vllm_max_num_seqs:
-            engine_args.max_num_seqs = self.config.vllm_max_num_seqs
+            # Configure vLLM engine args
+            self.logger.info("Creating AsyncEngineArgs...")
+            engine_args = AsyncEngineArgs(
+                model=self.model_name,
+                gpu_memory_utilization=self.config.vllm_gpu_memory_utilization,
+                tensor_parallel_size=gpu_count,  # Use all visible GPUs
+                disable_log_stats=True,
+            )
 
-        self.engine = AsyncLLMEngine.from_engine_args(engine_args)
-        self.logger.info("vLLM engine initialized successfully")
+            if self.config.vllm_max_num_seqs:
+                engine_args.max_num_seqs = self.config.vllm_max_num_seqs
 
-    def _messages_to_prompt(self, messages: List[Dict[str, Any]]) -> str:
-        """Convert chat messages to a single prompt string."""
-        prompt_parts = []
-        for message in messages:
-            role = message.get("role", "user")
-            content = message.get("content", "")
-            prompt_parts.append(f"{role}: {content}")
-        return "\n".join(prompt_parts)
+            self.logger.info("Creating AsyncLLMEngine...")
+            self.engine = AsyncLLMEngine.from_engine_args(engine_args)
+            self.logger.info(
+                f"vLLM engine initialized successfully: {self.engine is not None}"
+            )
+        except Exception as e:
+            self.logger.error(
+                f"Failed to initialize vLLM engine: {type(e).__name__}: {e}"
+            )
+            import traceback
+
+            self.logger.error(f"Traceback: {traceback.format_exc()}")
+            raise
 
     async def _process_job(self, job: Job) -> str:
         """Process job using vLLM engine."""
@@ -78,33 +85,42 @@ class VLLMWorker(BaseWorker):
         )
 
         if self.engine is None:
+            self.logger.error("vLLM engine is None - initialization must have failed")
+            self.logger.error(
+                f"Worker initialized: {hasattr(self, 'broker') and self.broker is not None}"
+            )
             raise RuntimeError("vLLM engine not initialized")
 
         results = []
 
-        # Format prompt based on chat mode
+        # Prepare prompt based on chat mode
         if job.chat_mode or job.messages:
             if not job.messages:
                 raise ValueError("Chat mode enabled but no messages provided")
 
-            # For chat mode, convert messages to a string prompt
+            # Use vLLM engine's tokenizer to format chat template
             messages = job.get_formatted_messages()
-            formatted_prompt = self._messages_to_prompt(messages)
+            tokenizer = await self.engine.get_tokenizer()
+            prompt = tokenizer.apply_chat_template(
+                conversation=messages, tokenize=False, add_generation_prompt=True
+            )
         else:
-            # Use traditional prompt formatting
-            formatted_prompt = job.get_formatted_prompt()
+            # Use traditional string prompt
+            prompt = job.get_formatted_prompt()
 
-        # Use generate method (AsyncLLMEngine doesn't have chat method)
+        # Use generate method
         async for output in self.engine.generate(
-            formatted_prompt, sampling_params, request_id=job.id
+            prompt, sampling_params, request_id=job.id
         ):
             results.append(output)
 
         if not results:
             raise ValueError("No results generated")
 
-        # Extract generated text
-        generated_text = results[0].outputs[0].text if results[0].outputs else ""
+        # Extract generated text from final output
+        final_output = results[-1]
+        generated_text = final_output.outputs[0].text if final_output.outputs else ""
+
         return generated_text
 
     async def _cleanup_processor(self) -> None:
