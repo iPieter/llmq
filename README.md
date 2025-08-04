@@ -54,6 +54,19 @@ volumes:
   rabbitmq_data:
 ```
 
+**HPC Clusters with Singularity:**
+
+```bash
+# Build Singularity container
+singularity build rabbitmq.sif docker://rabbitmq:3-management
+
+# Run RabbitMQ in background
+singularity instance start --bind /tmp:/tmp rabbitmq.sif rabbitmq-instance
+
+# Set connection URL for cluster node
+export RABBITMQ_URL=amqp://guest:guest@$(hostname):5672/
+```
+
 ### 3. Configure Environment
 
 Create a `.env` file in your project root:
