@@ -34,12 +34,16 @@ class JobSubmitter:
         timeout: int = 300,
         column_mapping: Optional[Dict[str, str]] = None,
         max_samples: Optional[int] = None,
+        split: str = "train",
+        subset: Optional[str] = None,
     ):
         self.queue_name = queue_name
         self.jobs_source = jobs_source
         self.timeout = timeout
         self.column_mapping = column_mapping or {}
         self.max_samples = max_samples
+        self.split = split
+        self.subset = subset
         self.config = get_config()
         self.logger = setup_logging("llmq.submit")
 
@@ -93,13 +97,23 @@ class JobSubmitter:
 
         # Load dataset in streaming mode for memory efficiency
         try:
-            dataset = load_dataset(self.jobs_source, streaming=True, split="train")
+            if self.subset:
+                dataset = load_dataset(
+                    self.jobs_source, self.subset, streaming=True, split=self.split
+                )
+            else:
+                dataset = load_dataset(
+                    self.jobs_source, streaming=True, split=self.split
+                )
         except Exception:
             # Try without specifying split
             self.console.print(
-                "[yellow]Failed to load 'train' split, trying default...[/yellow]"
+                f"[yellow]Failed to load '{self.split}' split, trying default...[/yellow]"
             )
-            dataset = load_dataset(self.jobs_source, streaming=True)
+            if self.subset:
+                dataset = load_dataset(self.jobs_source, self.subset, streaming=True)
+            else:
+                dataset = load_dataset(self.jobs_source, streaming=True)
             # Take the first split available
             dataset = next(iter(dataset.values()))
 
@@ -505,10 +519,12 @@ def run_submit(
     timeout: int = 300,
     column_mapping: Optional[Dict[str, str]] = None,
     max_samples: Optional[int] = None,
+    split: str = "train",
+    subset: Optional[str] = None,
 ):
     """Run the job submission process."""
     submitter = JobSubmitter(
-        queue_name, jobs_source, timeout, column_mapping, max_samples
+        queue_name, jobs_source, timeout, column_mapping, max_samples, split, subset
     )
 
     try:

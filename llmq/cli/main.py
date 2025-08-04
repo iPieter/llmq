@@ -30,12 +30,16 @@ def worker():
 @click.option(
     "--max-samples", type=int, help="Maximum number of samples to process from dataset"
 )
+@click.option("--split", default="train", help="Dataset split to use (default: train)")
+@click.option("--subset", help="Dataset subset/config to use")
 def submit(
     queue_name: str,
     jobs_source: str,
     timeout: int,
     column_mapping: tuple,
     max_samples: int,
+    split: str,
+    subset: str,
 ):
     """Submit jobs from JSONL file or Hugging Face dataset to queue
 
@@ -79,6 +83,8 @@ def submit(
         timeout,
         mapping_dict if mapping_dict else None,
         max_samples,
+        split,
+        subset,
     )
 
 
