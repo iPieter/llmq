@@ -31,6 +31,13 @@ class Config(BaseModel):
         description="Maximum number of sequences in a batch",
     )
 
+    vllm_max_model_len: Optional[int] = Field(
+        default_factory=lambda: (
+            int(value) if (value := os.getenv("VLLM_MAX_MODEL_LEN")) else None
+        ),
+        description="Maximum model length (context window) for vLLM",
+    )
+
     job_ttl_minutes: int = Field(
         default_factory=lambda: int(os.getenv("LLMQ_JOB_TTL_MINUTES", "30")),
         description="Job TTL in minutes",

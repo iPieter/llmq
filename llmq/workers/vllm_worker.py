@@ -63,6 +63,9 @@ class VLLMWorker(BaseWorker):
             if self.config.vllm_max_num_seqs:
                 engine_args.max_num_seqs = self.config.vllm_max_num_seqs
 
+            if self.config.vllm_max_model_len:
+                engine_args.max_model_len = self.config.vllm_max_model_len
+
             self.logger.info("Creating AsyncLLMEngine...")
             self.engine = AsyncLLMEngine.from_engine_args(engine_args)
             self.logger.info(
