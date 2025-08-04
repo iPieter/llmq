@@ -57,14 +57,14 @@ volumes:
 **HPC Clusters with Singularity:**
 
 ```bash
-# Build Singularity container
-singularity build rabbitmq.sif docker://rabbitmq:3-management
+# Use the provided utility script
+./utils/start_singularity_broker.sh
 
-# Run RabbitMQ in background
-singularity instance start --bind /tmp:/tmp rabbitmq.sif rabbitmq-instance
-
-# Set connection URL for cluster node
+# Set connection URL
 export RABBITMQ_URL=amqp://guest:guest@$(hostname):5672/
+
+# test the connection
+llmq status
 ```
 
 ### 3. Configure Environment
