@@ -1,11 +1,11 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
 
 
 class Job(BaseModel):
     id: str = Field(..., description="Unique job identifier")
-    prompt: str = Field(..., description="Template prompt with placeholders")
+    prompt: Optional[str] = Field(None, description="Template prompt with placeholders")
     messages: Optional[List[Dict[str, Any]]] = Field(
         None, description="Chat messages for chat-based models"
     )
@@ -16,8 +16,25 @@ class Job(BaseModel):
     class Config:
         extra = "allow"
 
+    @validator("messages", always=True)
+    def validate_prompt_or_messages(cls, v, values):
+        """Ensure either prompt OR messages is provided, not both or neither."""
+        prompt = values.get("prompt")
+
+        if prompt is not None and v is not None:
+            raise ValueError(
+                "Cannot specify both 'prompt' and 'messages'. Use one or the other."
+            )
+
+        if prompt is None and v is None:
+            raise ValueError("Must specify either 'prompt' or 'messages'.")
+
+        return v
+
     def get_formatted_prompt(self) -> str:
         """Format the prompt template with job data, excluding id and prompt fields."""
+        if self.prompt is None:
+            raise ValueError("Cannot format prompt: prompt is None")
         format_data = {
             k: v
             for k, v in self.dict().items()
