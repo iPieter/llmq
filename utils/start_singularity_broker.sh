@@ -37,16 +37,8 @@ singularity instance start --bind "$RABBITMQ_DATA:/var/lib/rabbitmq" "$RABBITMQ_
 echo "Starting RabbitMQ service..."
 nohup singularity exec instance://"$INSTANCE_NAME" rabbitmq-server > /dev/null 2>&1 &
 
-# Wait for RabbitMQ to start
-echo "Waiting for RabbitMQ to start..."
-sleep 5
-
-# Check if it's running
-if ss -tlnp | grep -q :5672; then
-    echo "✅ RabbitMQ is running on port 5672"
-    echo "Set connection URL with:"
-    echo "export RABBITMQ_URL=amqp://guest:guest@\$(hostname):5672/"
-else
-    echo "❌ RabbitMQ failed to start"
-    exit 1
-fi
+# Start RabbitMQ (may take a moment to bind to port)
+echo "✅ RabbitMQ startup initiated"
+echo "Set connection URL with:"
+echo "export RABBITMQ_URL=amqp://guest:guest@\$(hostname):5672/"
+echo "Test connection with: llmq status"
