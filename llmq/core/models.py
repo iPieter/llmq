@@ -1,11 +1,17 @@
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 
 
 class Job(BaseModel):
     id: str = Field(..., description="Unique job identifier")
     prompt: str = Field(..., description="Template prompt with placeholders")
+    messages: Optional[List[Dict[str, Any]]] = Field(
+        None, description="Chat messages for chat-based models"
+    )
+    chat_mode: bool = Field(
+        default=False, description="Use chat API instead of generate API"
+    )
 
     class Config:
         extra = "allow"
@@ -13,9 +19,34 @@ class Job(BaseModel):
     def get_formatted_prompt(self) -> str:
         """Format the prompt template with job data, excluding id and prompt fields."""
         format_data = {
-            k: v for k, v in self.dict().items() if k not in ["id", "prompt"]
+            k: v
+            for k, v in self.dict().items()
+            if k not in ["id", "prompt", "messages", "chat_mode"]
         }
         return self.prompt.format(**format_data)
+
+    def get_formatted_messages(self) -> List[Dict[str, Any]]:
+        """Format chat messages with job data, excluding special fields."""
+        if not self.messages:
+            return []
+
+        format_data = {
+            k: v
+            for k, v in self.dict().items()
+            if k not in ["id", "prompt", "messages", "chat_mode"]
+        }
+
+        formatted_messages = []
+        for message in self.messages:
+            formatted_message = {}
+            for key, value in message.items():
+                if isinstance(value, str):
+                    formatted_message[key] = value.format(**format_data)
+                else:
+                    formatted_message[key] = value
+            formatted_messages.append(formatted_message)
+
+        return formatted_messages
 
 
 class Result(BaseModel):

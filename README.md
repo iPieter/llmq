@@ -105,6 +105,7 @@ llmq status
 {"id": "job-001", "prompt": "Translate '{text}' to {language}", "text": "Hello world", "language": "Spanish"}
 {"id": "job-002", "prompt": "Translate '{text}' to {language}", "text": "Good morning", "language": "French"}
 {"id": "job-003", "prompt": "Summarize: {text}", "text": "AI is transforming industries globally."}
+{"id": "job-004", "messages": [{"role": "user", "content": "Translate {text} to {target_lang}"}], "chat_mode": true, "text": "Hello world", "target_lang": "Portuguese"}
 ```
 
 **Start a worker:**
@@ -140,8 +141,11 @@ llmq status translation-queue
 # Submit jobs from JSONL file (streams results to stdout, progress to stderr)
 llmq submit <queue-name> <jobs.jsonl> > results.jsonl
 
-# Example job format:
+# Traditional prompt format:
 {"id": "job-123", "prompt": "Translate {text} to {language}", "text": "Hello", "language": "Spanish"}
+
+# Chat message format (for chat-based models):
+{"id": "job-124", "messages": [{"role": "user", "content": "Translate {text} to {language}"}], "chat_mode": true, "text": "Hello", "language": "Spanish"}
 
 # Example result format:
 {"id": "job-123", "prompt": "Translate Hello to Spanish", "result": "Hola", "worker_id": "worker-gpu0", "duration_ms": 23.5, "timestamp": "2024-01-01T00:00:00Z"}
@@ -465,6 +469,58 @@ ruff check llmq tests
 
 # Type checking
 mypy llmq
+```
+
+## 💬 Chat Message Support
+
+llmq supports both traditional prompt-based models and modern chat-based models that expect structured message arrays.
+
+### Traditional Prompt Format
+
+```json
+{"id": "job-1", "prompt": "Translate {text} to {language}", "text": "Hello", "language": "Spanish"}
+```
+
+### Chat Message Format
+
+For models like Unbabel/Tower-Plus-9B, OpenAI-style chat models, or other instruction-tuned models:
+
+```json
+{"id": "job-2", "messages": [{"role": "user", "content": "Translate {text} to {language}"}], "chat_mode": true, "text": "Hello", "language": "Spanish"}
+```
+
+### Chat Format Features
+
+- **Template Support**: Message content supports the same `{variable}` templating as prompts
+- **Multiple Messages**: Support for multi-turn conversations:
+  ```json
+  {
+    "id": "job-3",
+    "messages": [
+      {"role": "system", "content": "You are a helpful translator."},
+      {"role": "user", "content": "Translate '{text}' to {target_lang}"}
+    ],
+    "chat_mode": true,
+    "text": "Hello world",
+    "target_lang": "Portuguese"
+  }
+  ```
+- **Automatic Detection**: Set `chat_mode: true` or just provide `messages` array
+- **Backward Compatibility**: Existing prompt-based jobs continue to work unchanged
+
+### Example: Unbabel Tower-Plus-9B
+
+```json
+{"id": "translation-1", "messages": [{"role": "user", "content": "Translate the following English source text to Portuguese (Portugal):\nEnglish: {text}\nPortuguese (Portugal): "}], "chat_mode": true, "text": "Hello world!"}
+```
+
+### Mixed Workloads
+
+You can submit both formats to the same queue - the worker automatically detects and handles each appropriately:
+
+```jsonl
+{"id": "old-style", "prompt": "Say hello in {language}", "language": "Spanish"}
+{"id": "new-style", "messages": [{"role": "user", "content": "Say hello in {language}"}], "chat_mode": true, "language": "French"}
 ```
 
 ## 📚 Advanced Usage
