@@ -276,6 +276,13 @@ llmq submit translation-queue example_jobs.jsonl > results.jsonl 2> progress.log
 watch -n 1 'llmq status translation-queue'
 ```
 
+### Dataset Translation with HuggingFace Datasets
+
+```bash
+# Submit translation jobs directly from HuggingFace dataset
+llmq submit translation-queue HuggingFaceFW/fineweb --map 'messages=[{"role": "user", "content": "Translate the following English source text to Dutch:\nEnglish: {text}\nDutch: "}]' --max-samples 5000 > results.jsonl
+```
+
 ### Testing with Dummy Workers
 
 ```bash
