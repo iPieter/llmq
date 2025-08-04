@@ -1,5 +1,5 @@
 import os
-from typing import Optional
+from typing import Optional, List, Dict, Any
 
 from vllm import AsyncLLMEngine, SamplingParams  # type: ignore
 from vllm.engine.arg_utils import AsyncEngineArgs  # type: ignore
@@ -61,6 +61,15 @@ class VLLMWorker(BaseWorker):
         self.engine = AsyncLLMEngine.from_engine_args(engine_args)
         self.logger.info("vLLM engine initialized successfully")
 
+    def _messages_to_prompt(self, messages: List[Dict[str, Any]]) -> str:
+        """Convert chat messages to a single prompt string."""
+        prompt_parts = []
+        for message in messages:
+            role = message.get("role", "user")
+            content = message.get("content", "")
+            prompt_parts.append(f"{role}: {content}")
+        return "\n".join(prompt_parts)
+
     async def _process_job(self, job: Job) -> str:
         """Process job using vLLM engine."""
         # Configure sampling parameters
@@ -73,26 +82,23 @@ class VLLMWorker(BaseWorker):
 
         results = []
 
-        # Use chat API if chat_mode is enabled or messages are provided
+        # Format prompt based on chat mode
         if job.chat_mode or job.messages:
             if not job.messages:
                 raise ValueError("Chat mode enabled but no messages provided")
 
-            formatted_messages = job.get_formatted_messages()
-
-            # Use chat method for chat-based models
-            async for output in self.engine.chat(
-                formatted_messages, sampling_params, request_id=job.id
-            ):
-                results.append(output)
+            # For chat mode, convert messages to a string prompt
+            messages = job.get_formatted_messages()
+            formatted_prompt = self._messages_to_prompt(messages)
         else:
-            # Use traditional generate method
+            # Use traditional prompt formatting
             formatted_prompt = job.get_formatted_prompt()
 
-            async for output in self.engine.generate(
-                formatted_prompt, sampling_params, request_id=job.id
-            ):
-                results.append(output)
+        # Use generate method (AsyncLLMEngine doesn't have chat method)
+        async for output in self.engine.generate(
+            formatted_prompt, sampling_params, request_id=job.id
+        ):
+            results.append(output)
 
         if not results:
             raise ValueError("No results generated")
