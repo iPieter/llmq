@@ -2,7 +2,7 @@
 
 A Python package that efficiently processes millions of LLM inference jobs using vLLM workers and RabbitMQ. Maximize GPU utilization through intelligent batching while providing simple CLI tools for job submission and monitoring.
 
-## 🚀 Quick Start
+## 🚀 Quick Start: Translation Example
 
 ### 1. Installation
 
@@ -97,41 +97,46 @@ llmq status
 # Should show: ✅ Connected to RabbitMQ
 ```
 
-### 5. Run Your First Job
+### 5. Translation Workflow Example
 
-**Create a jobs file (`jobs.jsonl`):**
+**Use the provided translation jobs (`example_jobs.jsonl`):**
+
+The example jobs file contains multilingual translation tasks using the chat message format for the Unbabel/Tower-Plus-9B model:
 
 ```json
-{"id": "job-001", "prompt": "Translate '{text}' to {language}", "text": "Hello world", "language": "Spanish"}
-{"id": "job-002", "prompt": "Translate '{text}' to {language}", "text": "Good morning", "language": "French"}
-{"id": "job-003", "prompt": "Summarize: {text}", "text": "AI is transforming industries globally."}
-{"id": "job-004", "messages": [{"role": "user", "content": "Translate {text} to {target_lang}"}], "chat_mode": true, "text": "Hello world", "target_lang": "Portuguese"}
+{"id": "translate-001", "messages": [{"role": "user", "content": "Translate the following English source text to Portuguese (Portugal):\nEnglish: {source_text}\nPortuguese (Portugal): "}], "source_text": "Hello world!"}
+{"id": "translate-002", "messages": [{"role": "user", "content": "Translate the following Spanish source text to French:\nSpanish: {source_text}\nFrench: "}], "source_text": "¿Cómo estás hoy?"}
 ```
 
-**Start a worker:**
+**Start the translation worker:**
 
 ```bash
-# Dummy worker for testing (no vLLM/GPU required)
-llmq worker dummy translation-queue
-
-# Real vLLM worker (automatically uses all visible GPUs)
-CUDA_VISIBLE_DEVICES=0,1,2,3 llmq worker run microsoft/DialoGPT-medium translation-queue
-
-# Filter worker for simple job processing
-llmq worker filter translation-queue language spanish
-
-# Multiple workers: open multiple terminals and run the same command
+# Start Unbabel Tower-Plus-9B worker (uses all visible GPUs)
+llmq worker run Unbabel/Tower-Plus-9B translation-queue
 ```
 
-**Submit jobs:**
+**Submit translation jobs:**
 
 ```bash
-# Submit jobs and stream results
-llmq submit translation-queue jobs.jsonl > results.jsonl
+# Submit jobs and stream results to file
+llmq submit translation-queue example_jobs.jsonl > results.jsonl
 
 # Monitor progress in another terminal
 llmq status translation-queue
 ```
+
+**View results:**
+
+```bash
+# Check the translated results
+cat results.jsonl
+```
+
+This workflow demonstrates:
+- **Chat-based model support** for modern translation models
+- **Template substitution** with `{source_text}` variables
+- **Real-time result streaming** to `results.jsonl`
+- **GPU-accelerated inference** with vLLM batching
 
 ## 📋 CLI Commands Reference
 
@@ -141,12 +146,6 @@ llmq status translation-queue
 # Submit jobs from JSONL file (streams results to stdout, progress to stderr)
 llmq submit <queue-name> <jobs.jsonl> > results.jsonl
 
-# Traditional prompt format:
-{"id": "job-123", "prompt": "Translate {text} to {language}", "text": "Hello", "language": "Spanish"}
-
-# Chat message format (for chat-based models):
-{"id": "job-124", "messages": [{"role": "user", "content": "Translate {text} to {language}"}], "chat_mode": true, "text": "Hello", "language": "Spanish"}
-
 # Example result format:
 {"id": "job-123", "prompt": "Translate Hello to Spanish", "result": "Hola", "worker_id": "worker-gpu0", "duration_ms": 23.5, "timestamp": "2024-01-01T00:00:00Z"}
 ```
@@ -154,22 +153,16 @@ llmq submit <queue-name> <jobs.jsonl> > results.jsonl
 ### Worker Management
 
 ```bash
+# Real vLLM workers (automatically uses all visible GPUs)
+llmq worker run <model-name> <queue-name>
+
 # Dummy workers (for testing, no GPU/vLLM required)
 llmq worker dummy <queue-name>
-
-# Real vLLM workers (automatically uses all visible GPUs)
-CUDA_VISIBLE_DEVICES=0,1,2,3 llmq worker run <model-name> <queue-name>
 
 # Filter workers (for simple job processing)
 llmq worker filter <queue-name> <field> <value>
 
-# Examples:
-llmq worker dummy test-queue
-llmq worker run microsoft/DialoGPT-medium chat-queue
-llmq worker run meta-llama/Llama-2-7b-chat-hf translation-queue
-llmq worker filter content-queue category important
-
-# Multiple workers: just run the same command in multiple terminals
+# Multiple workers: run the same command in multiple terminals
 ```
 
 ### Monitoring & Health
@@ -186,7 +179,6 @@ llmq health <queue-name>
 
 # Show recent errors
 llmq errors <queue-name>
-llmq errors <queue-name> --limit 50
 ```
 
 ## ⚙️ Configuration
@@ -210,21 +202,6 @@ Configuration is loaded in the following order (later values override earlier on
 | `LLMQ_CHUNK_SIZE` | `10000` | Jobs to read from JSONL at once |
 | `LLMQ_LOG_LEVEL` | `INFO` | Logging level |
 
-### Docker Environment Variables
-
-When running RabbitMQ in Docker, use these variables:
-
-```bash
-# Docker run
-docker run -d --name rabbitmq \
-  -p 5672:5672 -p 15672:15672 \
-  -e RABBITMQ_DEFAULT_USER=llmq \
-  -e RABBITMQ_DEFAULT_PASS=llmq123 \
-  rabbitmq:3-management
-
-# Then set your connection URL
-export RABBITMQ_URL=amqp://llmq:llmq123@localhost:5672/
-```
 
 ## 🏗️ Architecture
 
@@ -286,50 +263,28 @@ export LLMQ_CHUNK_SIZE=1000
 
 ## 📊 Example Workflows
 
-### Quick Testing with Dummy Workers
-
-```bash
-# Terminal 1: Start multiple dummy workers
-llmq worker dummy test-queue &
-llmq worker dummy test-queue &
-llmq worker dummy test-queue &
-
-# Terminal 2: Submit test jobs
-llmq submit test-queue example_jobs.jsonl > results.jsonl
-
-# Terminal 3: Monitor in real-time
-llmq status test-queue
-```
-
-### Large-Scale Translation
+### Translation with Unbabel Tower-Plus-9B
 
 ```bash
 # Terminal 1: Start vLLM worker with all GPUs
-CUDA_VISIBLE_DEVICES=0,1,2,3 llmq worker run Helsinki-NLP/opus-mt-en-es translation
+CUDA_VISIBLE_DEVICES=0,1,2,3 llmq worker run Unbabel/Tower-Plus-9B translation-queue
 
-# Terminal 2: Submit 1M translation jobs
-llmq submit translation million_translations.jsonl > results.jsonl 2> progress.log
+# Terminal 2: Submit translation jobs
+llmq submit translation-queue example_jobs.jsonl > results.jsonl 2> progress.log
 
 # Terminal 3: Monitor in real-time
-watch -n 1 'llmq status translation'
+watch -n 1 'llmq status translation-queue'
 ```
 
-### Multi-Worker Multi-Queue Processing
+### Testing with Dummy Workers
 
 ```bash
-# Terminal 1: Dummy workers for testing
-llmq worker dummy test-queue
+# Terminal 1: Start multiple dummy workers
+llmq worker dummy translation-queue &
+llmq worker dummy translation-queue &
 
-# Terminal 2: Real vLLM worker for production
-CUDA_VISIBLE_DEVICES=0,1 llmq worker run gpt2 chat-queue
-
-# Terminal 3: Filter worker for preprocessing
-llmq worker filter content-queue priority high
-
-# Terminal 4: Submit to different queues
-llmq submit test-queue test_jobs.jsonl > test_results.jsonl &
-llmq submit chat-queue chat_jobs.jsonl > chat_results.jsonl &
-llmq submit content-queue content_jobs.jsonl > content_results.jsonl &
+# Terminal 2: Submit and monitor
+llmq submit translation-queue example_jobs.jsonl > results.jsonl
 ```
 
 ## 🚨 Troubleshooting
@@ -439,41 +394,10 @@ export RABBITMQ_URL=amqp://guest:guest@localhost:5673/
 llmq status  # Should connect to test instance
 ```
 
-### Performance Benchmarking
 
-```bash
-# Create test jobs
-python -c "
-import json
-jobs = [{'id': f'test-{i}', 'prompt': 'Say hello {i} times', 'i': i} for i in range(1000)]
-with open('test_jobs.jsonl', 'w') as f:
-    for job in jobs: f.write(json.dumps(job) + '\n')
-"
+## 💬 Job Formats
 
-# Benchmark throughput
-time llmq submit test-queue test_jobs.jsonl > /dev/null
-```
-
-### Development Testing
-
-```bash
-# Install development dependencies
-pip install -e ".[dev]"
-
-# Run tests with file watching
-pytest-watch
-
-# Check code formatting
-black llmq tests
-ruff check llmq tests
-
-# Type checking
-mypy llmq
-```
-
-## 💬 Chat Message Support
-
-llmq supports both traditional prompt-based models and modern chat-based models that expect structured message arrays.
+llmq supports both traditional prompt-based and modern chat message formats:
 
 ### Traditional Prompt Format
 
@@ -481,78 +405,18 @@ llmq supports both traditional prompt-based models and modern chat-based models 
 {"id": "job-1", "prompt": "Translate {text} to {language}", "text": "Hello", "language": "Spanish"}
 ```
 
-### Chat Message Format
-
-For models like Unbabel/Tower-Plus-9B, OpenAI-style chat models, or other instruction-tuned models:
+### Chat Message Format (for modern models)
 
 ```json
-{"id": "job-2", "messages": [{"role": "user", "content": "Translate {text} to {language}"}], "chat_mode": true, "text": "Hello", "language": "Spanish"}
+{"id": "translation-1", "messages": [{"role": "user", "content": "Translate the following English source text to Portuguese (Portugal):\nEnglish: {source_text}\nPortuguese (Portugal): "}], "source_text": "Hello world!"}
 ```
 
-### Chat Format Features
+**Features:**
+- Template support with `{variable}` substitution
+- Multi-turn conversations with system/user/assistant roles
+- Automatic format detection
+- Backward compatibility
 
-- **Template Support**: Message content supports the same `{variable}` templating as prompts
-- **Multiple Messages**: Support for multi-turn conversations:
-  ```json
-  {
-    "id": "job-3",
-    "messages": [
-      {"role": "system", "content": "You are a helpful translator."},
-      {"role": "user", "content": "Translate '{text}' to {target_lang}"}
-    ],
-    "chat_mode": true,
-    "text": "Hello world",
-    "target_lang": "Portuguese"
-  }
-  ```
-- **Automatic Detection**: Set `chat_mode: true` or just provide `messages` array
-- **Backward Compatibility**: Existing prompt-based jobs continue to work unchanged
-
-### Example: Unbabel Tower-Plus-9B
-
-```json
-{"id": "translation-1", "messages": [{"role": "user", "content": "Translate the following English source text to Portuguese (Portugal):\nEnglish: {text}\nPortuguese (Portugal): "}], "chat_mode": true, "text": "Hello world!"}
-```
-
-### Mixed Workloads
-
-You can submit both formats to the same queue - the worker automatically detects and handles each appropriately:
-
-```jsonl
-{"id": "old-style", "prompt": "Say hello in {language}", "language": "Spanish"}
-{"id": "new-style", "messages": [{"role": "user", "content": "Say hello in {language}"}], "chat_mode": true, "language": "French"}
-```
-
-## 📚 Advanced Usage
-
-### Custom Sampling Parameters
-
-Modify `llmq/core/worker.py` to customize vLLM sampling:
-
-```python
-sampling_params = SamplingParams(
-    temperature=0.8,      # Creativity
-    max_tokens=512,       # Response length
-    top_p=0.9,           # Nucleus sampling
-    stop=["\n\n", "END"] # Stop sequences
-)
-```
-
-### Custom Job Processing
-
-Extend the `Job` model in `llmq/core/models.py`:
-
-```python
-class CustomJob(Job):
-    temperature: float = 0.7
-    max_tokens: int = 100
-    
-    def get_sampling_params(self) -> SamplingParams:
-        return SamplingParams(
-            temperature=self.temperature,
-            max_tokens=self.max_tokens
-        )
-```
 
 ---
 

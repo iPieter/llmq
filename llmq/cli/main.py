@@ -19,13 +19,57 @@ def worker():
 
 @cli.command()
 @click.argument("queue_name")
-@click.argument("jobs_file", type=click.Path(exists=True))
+@click.argument("jobs_source")  # Can be file path or dataset name
 @click.option("--timeout", default=300, help="Timeout in seconds to wait for results")
-def submit(queue_name: str, jobs_file: str, timeout: int):
-    """Submit jobs from JSONL file to queue"""
+@click.option(
+    "--map",
+    "column_mapping",
+    multiple=True,
+    help="Column mapping: --map prompt=text --map target_lang=language",
+)
+@click.option(
+    "--max-samples", type=int, help="Maximum number of samples to process from dataset"
+)
+def submit(
+    queue_name: str,
+    jobs_source: str,
+    timeout: int,
+    column_mapping: tuple,
+    max_samples: int,
+):
+    """Submit jobs from JSONL file or Hugging Face dataset to queue
+
+    Examples:
+    \b
+    # From JSONL file
+    llmq submit translation-queue example_jobs.jsonl
+
+    # From Hugging Face dataset
+    llmq submit translation-queue HuggingFaceFW/fineweb --map prompt=text --max-samples 1000
+
+    # Column mapping for translation task
+    llmq submit translation-queue wmt14 --map prompt="Translate to Dutch: {en}" --map source_lang=en --map target_lang=nl
+    """
     from llmq.cli.submit import run_submit
 
-    run_submit(queue_name, jobs_file, timeout)
+    # Parse column mapping from CLI format
+    mapping_dict = {}
+    for mapping in column_mapping:
+        if "=" in mapping:
+            key, value = mapping.split("=", 1)
+            mapping_dict[key] = value
+        else:
+            click.echo(
+                f"Warning: Invalid mapping format '{mapping}'. Use key=value format."
+            )
+
+    run_submit(
+        queue_name,
+        jobs_source,
+        timeout,
+        mapping_dict if mapping_dict else None,
+        max_samples,
+    )
 
 
 @cli.command()
