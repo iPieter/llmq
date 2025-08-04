@@ -131,10 +131,18 @@ class BaseWorker(ABC):
             # Calculate duration
             duration_ms = (time.time() - start_time) * 1000
 
+            # Get prompt for result logging
+            if job.messages:
+                # For chat jobs, create a summary of messages
+                prompt_for_result = f"Chat with {len(job.messages)} messages"
+            else:
+                # For regular jobs, use formatted prompt
+                prompt_for_result = job.get_formatted_prompt()
+
             # Create result
             result = Result(
                 id=job_id,
-                prompt=job.get_formatted_prompt(),
+                prompt=prompt_for_result,
                 result=result_text,
                 worker_id=self.worker_id,
                 duration_ms=duration_ms,
