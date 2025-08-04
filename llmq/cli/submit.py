@@ -117,12 +117,35 @@ class JobSubmitter:
         job_data: Dict[str, Any] = {"id": f"dataset-{index:08d}-{uuid.uuid4().hex[:8]}"}
 
         # Apply column mapping
-        for job_field, dataset_column in self.column_mapping.items():
-            if dataset_column in item:
-                job_data[job_field] = item[dataset_column]
+        for job_field, mapping_value in self.column_mapping.items():
+            if mapping_value.startswith("{") and mapping_value.endswith("}"):
+                # Handle JSON mapping for complex fields like messages
+                try:
+                    # Parse as JSON and format any template strings
+                    import json as json_module
+
+                    json_template = json_module.loads(mapping_value)
+                    job_data[job_field] = self._format_json_template(
+                        json_template, item
+                    )
+                except json_module.JSONDecodeError:
+                    self.logger.warning(
+                        f"Invalid JSON in mapping for field '{job_field}': {mapping_value}"
+                    )
+            elif "{" in mapping_value and "}" in mapping_value:
+                # Handle template string mapping
+                try:
+                    job_data[job_field] = mapping_value.format(**item)
+                except KeyError as e:
+                    self.logger.warning(
+                        f"Template variable {e} not found in dataset item for field '{job_field}'"
+                    )
+            elif mapping_value in item:
+                # Simple column mapping
+                job_data[job_field] = item[mapping_value]
             else:
                 self.logger.warning(
-                    f"Column '{dataset_column}' not found in dataset item. Available columns: {list(item.keys())}"
+                    f"Column '{mapping_value}' not found in dataset item. Available columns: {list(item.keys())}"
                 )
 
         # If no mapping provided and 'text' column exists, use it as prompt
@@ -140,6 +163,28 @@ class JobSubmitter:
                     job_data[key] = value
 
         return Job(**job_data)
+
+    def _format_json_template(self, json_obj: Any, item: Dict[str, Any]) -> Any:
+        """Recursively format JSON template with dataset item values."""
+        if isinstance(json_obj, str):
+            # Format string templates
+            try:
+                return json_obj.format(**item)
+            except KeyError as e:
+                self.logger.warning(f"Template variable {e} not found in dataset item")
+                return json_obj
+        elif isinstance(json_obj, dict):
+            # Recursively format dictionary values
+            return {
+                key: self._format_json_template(value, item)
+                for key, value in json_obj.items()
+            }
+        elif isinstance(json_obj, list):
+            # Recursively format list items
+            return [self._format_json_template(value, item) for value in json_obj]
+        else:
+            # Return as-is for other types
+            return json_obj
 
     def _signal_handler(self, signum: int, frame: Any) -> None:
         """Handle Ctrl+C gracefully - stop submitting, wait for pending results."""

@@ -39,16 +39,26 @@ def submit(
 ):
     """Submit jobs from JSONL file or Hugging Face dataset to queue
 
+    The --map option supports three types of mappings:
+    1. Simple column mapping: --map field=column
+    2. Template strings: --map field="Template with {column}"  
+    3. JSON templates: --map field='{"key": "value with {column}"}'
+
     Examples:
     \b
     # From JSONL file
     llmq submit translation-queue example_jobs.jsonl
 
-    # From Hugging Face dataset
-    llmq submit translation-queue HuggingFaceFW/fineweb --map prompt=text --max-samples 1000
+    # Simple mapping from dataset column to job field
+    llmq submit translation-queue HuggingFaceFW/fineweb --map source_text=text --max-samples 1000
 
-    # Column mapping for translation task
-    llmq submit translation-queue wmt14 --map prompt="Translate to Dutch: {en}" --map source_lang=en --map target_lang=nl
+    # Template string mapping
+    llmq submit translation-queue HuggingFaceFW/fineweb --map prompt="Translate to Dutch: {text}" --max-samples 1000
+
+    # JSON mapping for chat messages
+    llmq submit translation-queue HuggingFaceFW/fineweb \\
+      --map 'messages=[{"role": "user", "content": "Translate to Dutch:\\nEnglish: {text}\\nDutch: "}]' \\
+      --map source_text=text --max-samples 1000
     """
     from llmq.cli.submit import run_submit
 
