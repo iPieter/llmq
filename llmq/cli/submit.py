@@ -116,9 +116,23 @@ class JobSubmitter:
         """Create a Job from a dataset item using column mapping."""
         job_data: Dict[str, Any] = {"id": f"dataset-{index:08d}-{uuid.uuid4().hex[:8]}"}
 
+        # Debug: log the first few items to understand the data structure
+        if index < 3:
+            self.logger.info(f"Dataset item {index} keys: {list(item.keys())}")
+            if "text" in item:
+                text_preview = (
+                    str(item["text"])[:100] + "..."
+                    if len(str(item["text"])) > 100
+                    else str(item["text"])
+                )
+                self.logger.info(f"Dataset item {index} text preview: {text_preview}")
+
         # Apply column mapping
         for job_field, mapping_value in self.column_mapping.items():
-            if mapping_value.startswith("{") and mapping_value.endswith("}"):
+            self.logger.info(f"Processing mapping: {job_field} = {mapping_value}")
+            if (mapping_value.startswith("{") and mapping_value.endswith("}")) or (
+                mapping_value.startswith("[") and mapping_value.endswith("]")
+            ):
                 # Handle JSON mapping for complex fields like messages
                 try:
                     # Parse as JSON and format any template strings
@@ -128,10 +142,12 @@ class JobSubmitter:
                     job_data[job_field] = self._format_json_template(
                         json_template, item
                     )
-                except json_module.JSONDecodeError:
-                    self.logger.warning(
-                        f"Invalid JSON in mapping for field '{job_field}': {mapping_value}"
+                except json_module.JSONDecodeError as e:
+                    self.logger.error(
+                        f"Invalid JSON in mapping for field '{job_field}': {mapping_value}. Error: {e}"
                     )
+                    # Set field to None to avoid missing field errors
+                    job_data[job_field] = None
             elif "{" in mapping_value and "}" in mapping_value:
                 # Handle template string mapping
                 try:
@@ -161,6 +177,20 @@ class JobSubmitter:
                 # Only add simple types that can be used in templates
                 if isinstance(value, (str, int, float, bool)):
                     job_data[key] = value
+
+        # Set chat_mode=True if we have messages
+        if "messages" in job_data and job_data["messages"] is not None:
+            job_data["chat_mode"] = True
+
+        # Ensure we have either prompt or messages
+        if "messages" not in job_data and "prompt" not in job_data:
+            # Fallback: use text column as prompt if available
+            if "text" in item:
+                job_data["prompt"] = str(item["text"])
+            else:
+                raise ValueError(
+                    f"No messages or prompt could be created from item. Available keys: {list(item.keys())}"
+                )
 
         return Job(**job_data)
 
