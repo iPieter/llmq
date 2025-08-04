@@ -146,8 +146,8 @@ class JobSubmitter:
                     self.logger.error(
                         f"Invalid JSON in mapping for field '{job_field}': {mapping_value}. Error: {e}"
                     )
-                    # Set field to None to avoid missing field errors
-                    job_data[job_field] = None
+                    # Don't set the field at all if JSON parsing fails
+                    continue
             elif "{" in mapping_value and "}" in mapping_value:
                 # Handle template string mapping
                 try:
