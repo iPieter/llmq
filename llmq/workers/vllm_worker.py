@@ -102,10 +102,9 @@ class VLLMWorker(BaseWorker):
                 raise ValueError("Chat mode enabled but no messages provided")
 
             # Use vLLM engine's tokenizer to format chat template
-            messages = job.get_formatted_messages()
             tokenizer = await self.engine.get_tokenizer()
             prompt = tokenizer.apply_chat_template(
-                conversation=messages, tokenize=False, add_generation_prompt=True
+                conversation=job.messages, tokenize=False, add_generation_prompt=True
             )
         else:
             # Use traditional string prompt
