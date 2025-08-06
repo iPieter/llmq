@@ -263,59 +263,24 @@ class JobSubmitter:
             # Wait for all pending results if we have any
             if self.pending_jobs and not self.shutting_down:
                 initial_pending = len(self.pending_jobs)
-                # For streaming datasets, we may not know the total upfront
-                total_for_progress = initial_pending if initial_pending > 0 else None
+                self.console.print(
+                    f"[blue]Waiting for {initial_pending} pending results...[/blue]"
+                )
+                self.console.print(
+                    f"[dim]Idle timeout: {self.timeout}s (resets when results arrive)[/dim]"
+                )
 
-                # Choose progress columns based on whether we know the total
-                if total_for_progress:
-                    progress_columns = [
-                        SpinnerColumn(),
-                        TextColumn("[progress.description]{task.description}"),
-                        BarColumn(),
-                        MofNCompleteColumn(),
-                        TextColumn("Complete: {task.fields[complete_rate]:.1f}/sec"),
-                        TimeElapsedColumn(),
-                    ]
-                else:
-                    progress_columns = [
-                        SpinnerColumn(),
-                        TextColumn("[progress.description]{task.description}"),
-                        TextColumn("Completed: {task.completed}"),
-                        TextColumn("Complete: {task.fields[complete_rate]:.1f}/sec"),
-                        TimeElapsedColumn(),
-                    ]
+                # Wait for all results with idle timeout (resets when results come in)
+                while self.pending_jobs and not self.shutting_down:
+                    time_since_last_result = time.time() - self.last_result_time
 
-                with Progress(*progress_columns, console=self.console) as progress:
-                    wait_task = progress.add_task(
-                        "Waiting for results",
-                        total=total_for_progress,
-                        complete_rate=0.0,
-                    )
-
-                    progress.update(wait_task, completed=self.completed_count)
-
-                    # Wait for all results with idle timeout (resets when results come in)
-                    while self.pending_jobs and not self.shutting_down:
-                        time_since_last_result = time.time() - self.last_result_time
-
-                        if time_since_last_result >= self.timeout:
-                            self.console.print(
-                                f"[yellow]Idle timeout: No results received for {self.timeout}s. Exiting.[/yellow]"
-                            )
-                            break
-
-                        # Update progress with current completion rate
-                        elapsed = time.time() - self.start_time
-                        complete_rate = (
-                            self.completed_count / elapsed if elapsed > 0 else 0
+                    if time_since_last_result >= self.timeout:
+                        self.console.print(
+                            f"[yellow]Idle timeout: No results received for {self.timeout}s. Exiting.[/yellow]"
                         )
-                        progress.update(
-                            wait_task,
-                            completed=self.completed_count,
-                            complete_rate=complete_rate,
-                        )
+                        break
 
-                        await asyncio.sleep(0.5)
+                    await asyncio.sleep(0.5)
 
                 if self.shutting_down:
                     self.console.print(
@@ -333,6 +298,19 @@ class JobSubmitter:
             self.logger.error(f"Submit error: {e}", exc_info=True)
             self.console.print(f"[red]Error: {e}[/red]")
         finally:
+            # Show final completion stats
+            total_time = time.time() - self.start_time
+            if total_time > 0 and self.completed_count > 0:
+                completion_rate = self.completed_count / total_time
+                self.console.print(
+                    f"[green]Completed {self.completed_count} jobs in {total_time:.1f}s "
+                    f"({completion_rate:.1f} jobs/sec)[/green]"
+                )
+            elif self.completed_count > 0:
+                self.console.print(
+                    f"[green]Completed {self.completed_count} jobs[/green]"
+                )
+
             if self.broker:
                 await self.broker.disconnect()
 
