@@ -103,8 +103,8 @@ class VLLMWorker(BaseWorker):
 
             # Use vLLM engine's tokenizer to format chat template
             tokenizer = await self.engine.get_tokenizer()
-            prompt = tokenizer.apply_chat_template(
-                messages=job.messages, tokenize=False, add_generation_prompt=True
+            prompt = tokenizer.apply_chat_template(  # type: ignore
+                conversation=job.messages, tokenize=False, add_generation_prompt=True
             )
         else:
             # Use traditional string prompt
