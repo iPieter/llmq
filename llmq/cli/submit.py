@@ -87,7 +87,7 @@ class JobSubmitter:
     def _load_dataset_iterator(self) -> Iterator[Dict[str, Any]]:
         """Load and iterate through a Hugging Face dataset."""
         try:
-            from datasets import load_dataset
+            from datasets import load_dataset  # type: ignore
         except ImportError:
             raise ImportError(
                 "datasets package is required for Hugging Face dataset support. Install with: pip install datasets"
