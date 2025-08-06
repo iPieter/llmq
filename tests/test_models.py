@@ -34,6 +34,36 @@ class TestJob:
         formatted = job.get_formatted_prompt()
         assert formatted == "Translate 'Hello' to Spanish"
 
+    def test_job_formatted_prompt_with_brackets_in_data(self):
+        """Test prompt formatting when data contains curly braces."""
+        job = Job(
+            id="test-001",
+            prompt="Translate: {text}",
+            text="This text has {brackets} and {more_brackets} in it",
+        )
+
+        # Should not raise KeyError for 'brackets' or 'more_brackets'
+        formatted = job.get_formatted_prompt()
+        assert (
+            formatted == "Translate: This text has {brackets} and {more_brackets} in it"
+        )
+
+    def test_job_with_messages_only(self):
+        """Test job creation with messages field only (no extra dataset fields)."""
+        job = Job(
+            id="test-001",
+            messages=[{"role": "user", "content": "Translate this text"}],
+            chat_mode=True,
+        )
+
+        assert job.id == "test-001"
+        assert job.messages == [{"role": "user", "content": "Translate this text"}]
+        assert job.chat_mode is True
+        assert job.prompt is None
+        # Should not have extra fields like 'text'
+        job_dict = job.dict()
+        assert "text" not in job_dict
+
     def test_job_extra_fields_allowed(self):
         """Test that extra fields are allowed in job."""
         job = Job(

@@ -3,14 +3,14 @@
 #SBATCH --account=ehpc-aif-2025pg01-128
 #SBATCH --qos=ehpc-aif-2025pg01-128
 #SBATCH --partition=common
-#SBATCH --gres=gpu:8
-#SBATCH --cpus-per-task=26
+#SBATCH --nodes=1
+#SBATCH --gpus-per-node=8
+#SBATCH --cpus-per-task=64
 #SBATCH --mem=250G
-#SBATCH --time=08:00:00
+#SBATCH --time=01:00:00
 #SBATCH --output=llmq-benchmark-%j.out
 #SBATCH --error=llmq-benchmark-%j.err
 #SBATCH --nodelist=dgx1
-#SBATCH --ntasks=9
 
 # Get the allocated node
 NODE=$(hostname)
@@ -25,71 +25,66 @@ cd "$PROJECT_DIR"
 echo "Working directory: $(pwd)"
 
 # Activate environment
-source .env
+source "$PROJECT_DIR/.env/bin/activate"
 echo "Environment activated"
 
 # Export LLMQ configuration
 export VLLM_MAX_NUM_SEQS=750
 export VLLM_QUEUE_PREFETCH=1250
+export RABBITMQ_URL=amqp://guest:guest@$(hostname):5672/
 echo "LLMQ config: MAX_NUM_SEQS=$VLLM_MAX_NUM_SEQS, QUEUE_PREFETCH=$VLLM_QUEUE_PREFETCH"
 
 # Step 1: Start RabbitMQ broker
 echo "=========================================="
 echo "Step 1: Starting RabbitMQ broker..."
 echo "=========================================="
-./utils/start_singularity_broker.sh
+bash llmq/utils/start_singularity_broker.sh
 echo "Waiting 20 seconds for RabbitMQ to initialize..."
 sleep 20
 echo "RabbitMQ should be ready"
 
-# Step 2: Start workers on each GPU using srun
+# Step 2: Start workers on each GPU
 echo "=========================================="
-echo "Step 2: Starting LLMQ workers on 8 GPUs using srun..."
+echo "Step 2: Starting LLMQ workers on 8 GPUs..."
 echo "=========================================="
 
-# Start workers using srun in background
+# Start workers in background
 for gpu_id in 0 1 2 3 4 5 6 7; do
     echo "Starting worker on GPU $gpu_id..."
-    srun --ntasks=1 --gpus=1 --gpu-bind=single:$gpu_id \
-         --output=worker-gpu${gpu_id}-%j.out --error=worker-gpu${gpu_id}-%j.err \
-         bash -c "
-         export CUDA_VISIBLE_DEVICES=$gpu_id
-         export VLLM_MAX_NUM_SEQS=$VLLM_MAX_NUM_SEQS
-         export VLLM_QUEUE_PREFETCH=$VLLM_QUEUE_PREFETCH
-         cd $PROJECT_DIR
-         source .env
-         llmq worker run Unbabel/Tower-Plus-9B translation-queue
-         " &
+    (
+        export CUDA_VISIBLE_DEVICES=$gpu_id
+        export VLLM_MAX_NUM_SEQS=$VLLM_MAX_NUM_SEQS
+        export VLLM_QUEUE_PREFETCH=$VLLM_QUEUE_PREFETCH
+        export RABBITMQ_URL=amqp://guest:guest@$(hostname):5672/
+        cd "$PROJECT_DIR"
+        source "$PROJECT_DIR/.env/bin/activate"
+        llmq worker run Unbabel/Tower-Plus-9B translation-queue
+    ) > worker-gpu${gpu_id}-${SLURM_JOB_ID}.out 2> worker-gpu${gpu_id}-${SLURM_JOB_ID}.err &
     
-    echo "Worker $gpu_id started with srun"
+    echo "Worker $gpu_id started"
     sleep 2
 done
 
-echo "All workers started with srun"
+echo "All workers started"
 
 # Wait for workers to initialize
 echo "Waiting 45 seconds for all workers to initialize..."
 sleep 45
 
-# Step 3: Submit benchmark job using srun
+# Step 3: Submit benchmark job
 echo "=========================================="
-echo "Step 3: Starting benchmark submission using srun..."
+echo "Step 3: Starting benchmark submission..."
 echo "=========================================="
 
 # Record start time
 BENCHMARK_START=$(date +%s)
 
-# Submit the benchmark job using srun (runs on main task)
-srun --ntasks=1 --cpus-per-task=4 \
-     --output=benchmark-submit-%j.out --error=benchmark-submit-%j.err \
-     bash -c "
-     cd $PROJECT_DIR
-     source .env
-     llmq submit translation-queue Aleph-Alpha/Aleph-Alpha-GermanWeb \
-         --subset synthetic \
-         --map 'messages=[\{\"role\": \"user\", \"content\": \"Translate the following German source text to Dutch:\\nGerman: \{text\}\\nDutch: \"\}]' \
-         --max-samples 15000 > results.jsonl
-     "
+# Submit the benchmark job
+
+llmq submit translation-queue Aleph-Alpha/Aleph-Alpha-GermanWeb \
+    --subset synthetic \
+    --map 'messages=[{"role": "user", "content": "Translate the following German source text to Dutch:\nGerman: {text}\nDutch: "}]' \
+    --max-samples 15000 > results.jsonl
 
 # Record completion
 BENCHMARK_END=$(date +%s)
@@ -115,7 +110,7 @@ else
     echo "WARNING: results.jsonl not found!"
 fi
 
-# Step 4: Cleanup (workers will be automatically cleaned up by SLURM)
+# Step 4: Cleanup
 echo "=========================================="
 echo "Step 4: SLURM will handle worker cleanup automatically"
 echo "=========================================="
