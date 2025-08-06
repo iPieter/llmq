@@ -535,8 +535,9 @@ class JobSubmitter:
             try:
                 result = Result.parse_raw(message.body)
 
-                # Output result to stdout
-                print(result.json(), file=sys.stdout, flush=True)
+                # Output result to stdout (ensure it's not buffered)
+                sys.stdout.write(result.json() + "\n")
+                sys.stdout.flush()
 
                 # Track completion
                 if result.id in self.pending_jobs:
