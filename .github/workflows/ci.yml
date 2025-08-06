@@ -69,8 +69,8 @@ jobs:
           - 5672:5672
           - 15672:15672
         env:
-          RABBITMQ_DEFAULT_USER: test
-          RABBITMQ_DEFAULT_PASS: test
+          RABBITMQ_DEFAULT_USER: llmq
+          RABBITMQ_DEFAULT_PASS: llmq123
         options: >-
           --health-cmd "rabbitmq-diagnostics -q ping"
           --health-interval 10s
@@ -96,6 +96,6 @@ jobs:
 
     - name: Run integration tests
       env:
-        RABBITMQ_URL: amqp://test:test@localhost:5672/
+        RABBITMQ_URL: amqp://llmq:llmq123@localhost:5672/
       run: |
         pytest -m integration -v
