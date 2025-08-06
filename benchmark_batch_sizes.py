@@ -30,13 +30,57 @@ except ImportError:
 
 
 class BatchSizeBenchmark:
-    def __init__(self):
+    def __init__(self, model_name="Unbabel/Tower-Plus-9B"):
         self.batch_sizes = list(range(50, 2100, 50))  # 50 to 2000 in steps of 50
         self.results = []
         self.queue_name = "translation-queue"
         self.dataset = "Aleph-Alpha/Aleph-Alpha-GermanWeb"
         self.max_samples = 1000  # Smaller sample size for faster benchmarking
         self.map_template = 'messages=[{"role": "user", "content": "Translate the following German source text to Dutch:\\nGerman: {text}\\nDutch: "}]'
+        self.model_name = model_name
+        self.worker_process = None
+
+    def start_worker(self, batch_size: int):
+        """Start vLLM worker with specific batch size."""
+        print(
+            f"Starting worker with batch_size={batch_size}, prefetch={batch_size * 2}..."
+        )
+
+        # Set environment variables
+        env = os.environ.copy()
+        env["VLLM_MAX_NUM_SEQS"] = str(batch_size)
+        env["VLLM_QUEUE_PREFETCH"] = str(batch_size * 2)
+
+        # Start worker process
+        cmd = ["llmq", "worker", "run", self.model_name, self.queue_name]
+        self.worker_process = subprocess.Popen(
+            cmd, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        )
+
+        # Wait a moment for worker to start
+        time.sleep(10)  # Give worker time to initialize
+
+        # Check if worker started successfully
+        if self.worker_process.poll() is not None:
+            stdout, stderr = self.worker_process.communicate()
+            raise Exception(f"Worker failed to start: {stderr}")
+
+        print("✓ Worker started successfully")
+
+    def stop_worker(self):
+        """Stop the current worker."""
+        if self.worker_process and self.worker_process.poll() is None:
+            print("Stopping worker...")
+            self.worker_process.terminate()
+            try:
+                self.worker_process.wait(timeout=10)
+                print("✓ Worker stopped")
+            except subprocess.TimeoutExpired:
+                print("Worker didn't stop gracefully, killing...")
+                self.worker_process.kill()
+                self.worker_process.wait()
+                print("✓ Worker killed")
+            self.worker_process = None
 
     def run_single_test(self, batch_size: int) -> Tuple[float, Dict]:
         """Run a single benchmark test with given batch size."""
@@ -44,10 +88,14 @@ class BatchSizeBenchmark:
         print(f"Testing batch size: {batch_size} (prefetch: {batch_size * 2})")
         print(f"{'='*60}")
 
-        # Set environment variables
-        env = os.environ.copy()
-        env["VLLM_MAX_NUM_SEQS"] = str(batch_size)  # Actual batch size
-        env["VLLM_QUEUE_PREFETCH"] = str(batch_size * 2)  # Prefetch = 2x batch size
+        # Restart worker with new batch size
+        self.stop_worker()
+        time.sleep(2)  # Brief pause between stop/start
+
+        try:
+            self.start_worker(batch_size)
+        except Exception as e:
+            return 0.0, {"error": f"Worker start failed: {e}"}
 
         # Prepare command
         cmd = [
@@ -68,7 +116,6 @@ class BatchSizeBenchmark:
         try:
             result = subprocess.run(
                 cmd,
-                env=env,
                 capture_output=True,
                 text=True,
                 timeout=600,  # 10 minute timeout
@@ -127,20 +174,27 @@ class BatchSizeBenchmark:
         print("Starting batch size benchmark...")
         print(f"Testing batch sizes: {self.batch_sizes}")
         print(f"Using {self.max_samples} samples per test")
+        print("Note: Worker will be restarted for each batch size test")
 
-        for batch_size in self.batch_sizes:
-            rate, details = self.run_single_test(batch_size)
-            self.results.append(details)
+        try:
+            for batch_size in self.batch_sizes:
+                rate, details = self.run_single_test(batch_size)
+                self.results.append(details)
 
-            if details.get("success"):
-                print(f"✓ Batch size {batch_size}: {rate:.1f} jobs/sec")
-            else:
-                print(
-                    f"✗ Batch size {batch_size}: FAILED - {details.get('error', 'unknown error')}"
-                )
+                if details.get("success"):
+                    print(f"✓ Batch size {batch_size}: {rate:.1f} jobs/sec")
+                else:
+                    print(
+                        f"✗ Batch size {batch_size}: FAILED - {details.get('error', 'unknown error')}"
+                    )
 
-            # Small delay between tests
-            time.sleep(2)
+                # Small delay between tests
+                time.sleep(2)
+
+        finally:
+            # Always cleanup worker at the end
+            print("\nCleaning up...")
+            self.stop_worker()
 
         # Save results
         self.save_results()
@@ -260,13 +314,12 @@ def main():
     print("LLMQ Batch Size Benchmark")
     print("=" * 40)
     print("This will test different batch sizes and measure processing speed.")
-    print("Make sure you have a vLLM worker running before starting!")
+    print("The script will automatically start/restart vLLM workers as needed.")
     print()
-    print("Expected worker command:")
-    print("llmq worker run Unbabel/Tower-Plus-9B translation-queue")
-    print(
-        "(Note: VLLM_MAX_NUM_SEQS and VLLM_QUEUE_PREFETCH will be set by this script)"
-    )
+    print("Requirements:")
+    print("- llmq must be installed and available")
+    print("- Model 'Unbabel/Tower-Plus-9B' should be available")
+    print("- No existing workers should be running on 'translation-queue'")
     print()
 
     if not HAS_PLOTTING:
@@ -274,9 +327,9 @@ def main():
         print("To enable charts, install with: pip install matplotlib pandas")
         print()
 
-    response = input("Worker is running and ready? (y/N): ")
+    response = input("Ready to start automated benchmark? (y/N): ")
     if response.lower() != "y":
-        print("Please start the worker first, then run this script again.")
+        print("Benchmark cancelled.")
         sys.exit(1)
 
     benchmark = BatchSizeBenchmark()
