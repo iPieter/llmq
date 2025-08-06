@@ -314,12 +314,16 @@ class JobSubmitter:
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             TextColumn("Processed: {task.completed}"),
-            TextColumn("Rate: {task.fields[rate]:.1f} jobs/sec"),
+            TextColumn("Submit: {task.fields[submit_rate]:.1f}/sec"),
+            TextColumn("Complete: {task.fields[complete_rate]:.1f}/sec"),
             TimeElapsedColumn(),
             console=self.console,
         ) as progress:
             submit_task = progress.add_task(
-                "Submitting from dataset", total=None, rate=0.0
+                "Submitting from dataset",
+                total=None,
+                submit_rate=0.0,
+                complete_rate=0.0,
             )
 
             chunk = []
@@ -341,12 +345,19 @@ class JobSubmitter:
                             chunk = []
 
                             # Update progress
-                            rate = (
-                                self.submitted_count / (time.time() - self.start_time)
-                                if time.time() > self.start_time
-                                else 0
+                            elapsed = time.time() - self.start_time
+                            submit_rate = (
+                                self.submitted_count / elapsed if elapsed > 0 else 0
                             )
-                            progress.update(submit_task, completed=index, rate=rate)
+                            complete_rate = (
+                                self.completed_count / elapsed if elapsed > 0 else 0
+                            )
+                            progress.update(
+                                submit_task,
+                                completed=index,
+                                submit_rate=submit_rate,
+                                complete_rate=complete_rate,
+                            )
 
                             # Small delay to prevent overwhelming RabbitMQ
                             await asyncio.sleep(0.01)
@@ -360,12 +371,15 @@ class JobSubmitter:
                     await self._submit_chunk(chunk)
 
                 # Final progress update
-                rate = (
-                    self.submitted_count / (time.time() - self.start_time)
-                    if time.time() > self.start_time
-                    else 0
+                elapsed = time.time() - self.start_time
+                submit_rate = self.submitted_count / elapsed if elapsed > 0 else 0
+                complete_rate = self.completed_count / elapsed if elapsed > 0 else 0
+                progress.update(
+                    submit_task,
+                    completed=index,
+                    submit_rate=submit_rate,
+                    complete_rate=complete_rate,
                 )
-                progress.update(submit_task, completed=index, rate=rate)
 
             except Exception as e:
                 self.console.print(f"[red]Error loading dataset: {e}[/red]")
@@ -384,12 +398,13 @@ class JobSubmitter:
             TextColumn("[progress.description]{task.description}"),
             BarColumn(),
             MofNCompleteColumn(),
-            TextColumn("Rate: {task.fields[rate]:.1f} jobs/sec"),
+            TextColumn("Submit: {task.fields[submit_rate]:.1f}/sec"),
+            TextColumn("Complete: {task.fields[complete_rate]:.1f}/sec"),
             TimeElapsedColumn(),
             console=self.console,
         ) as progress:
             submit_task = progress.add_task(
-                "Submitting jobs", total=total_lines, rate=0.0
+                "Submitting jobs", total=total_lines, submit_rate=0.0, complete_rate=0.0
             )
 
             with open(self.jobs_file, "r") as f:
@@ -414,12 +429,19 @@ class JobSubmitter:
                             chunk = []
 
                             # Update progress
-                            rate = (
-                                self.submitted_count / (time.time() - self.start_time)
-                                if time.time() > self.start_time
-                                else 0
+                            elapsed = time.time() - self.start_time
+                            submit_rate = (
+                                self.submitted_count / elapsed if elapsed > 0 else 0
                             )
-                            progress.update(submit_task, completed=line_num, rate=rate)
+                            complete_rate = (
+                                self.completed_count / elapsed if elapsed > 0 else 0
+                            )
+                            progress.update(
+                                submit_task,
+                                completed=line_num,
+                                submit_rate=submit_rate,
+                                complete_rate=complete_rate,
+                            )
 
                             # Small delay to prevent overwhelming RabbitMQ
                             await asyncio.sleep(0.01)
@@ -438,12 +460,15 @@ class JobSubmitter:
                     await self._submit_chunk(chunk)
 
                 # Final progress update
-                rate = (
-                    self.submitted_count / (time.time() - self.start_time)
-                    if time.time() > self.start_time
-                    else 0
+                elapsed = time.time() - self.start_time
+                submit_rate = self.submitted_count / elapsed if elapsed > 0 else 0
+                complete_rate = self.completed_count / elapsed if elapsed > 0 else 0
+                progress.update(
+                    submit_task,
+                    completed=self.submitted_count,
+                    submit_rate=submit_rate,
+                    complete_rate=complete_rate,
                 )
-                progress.update(submit_task, completed=self.submitted_count, rate=rate)
 
         self.console.print(
             f"[green]Submitted {self.submitted_count} jobs to queue '{self.queue_name}'[/green]"
