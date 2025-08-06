@@ -182,15 +182,17 @@ class JobSubmitter:
         if not self.column_mapping and "text" in item:
             job_data["prompt"] = str(item["text"])
 
-        # Add any unmapped fields as extra data (for template variables)
-        for key, value in item.items():
-            if (
-                key not in [v for v in self.column_mapping.values()]
-                and key not in job_data
-            ):
-                # Only add simple types that can be used in templates
-                if isinstance(value, (str, int, float, bool)):
-                    job_data[key] = value
+        # Add unmapped fields only if using prompt mode (needed for template variables)
+        # Skip for message mode since templates are already processed during mapping
+        if "messages" not in job_data:
+            for key, value in item.items():
+                if (
+                    key not in [v for v in self.column_mapping.values()]
+                    and key not in job_data
+                ):
+                    # Only add simple types that can be used in templates
+                    if isinstance(value, (str, int, float, bool)):
+                        job_data[key] = value
 
         # Set chat_mode=True if we have messages
         if "messages" in job_data and job_data["messages"] is not None:
