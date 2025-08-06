@@ -41,12 +41,13 @@ class BatchSizeBenchmark:
     def run_single_test(self, batch_size: int) -> Tuple[float, Dict]:
         """Run a single benchmark test with given batch size."""
         print(f"\n{'='*60}")
-        print(f"Testing batch size: {batch_size}")
+        print(f"Testing batch size: {batch_size} (prefetch: {batch_size * 2})")
         print(f"{'='*60}")
 
-        # Set environment variable
+        # Set environment variables
         env = os.environ.copy()
-        env["VLLM_QUEUE_PREFETCH"] = str(batch_size)
+        env["VLLM_MAX_NUM_SEQS"] = str(batch_size)  # Actual batch size
+        env["VLLM_QUEUE_PREFETCH"] = str(batch_size * 2)  # Prefetch = 2x batch size
 
         # Prepare command
         cmd = [
@@ -262,8 +263,10 @@ def main():
     print("Make sure you have a vLLM worker running before starting!")
     print()
     print("Expected worker command:")
-    print("export VLLM_MAX_NUM_SEQS=1000")
     print("llmq worker run Unbabel/Tower-Plus-9B translation-queue")
+    print(
+        "(Note: VLLM_MAX_NUM_SEQS and VLLM_QUEUE_PREFETCH will be set by this script)"
+    )
     print()
 
     if not HAS_PLOTTING:
