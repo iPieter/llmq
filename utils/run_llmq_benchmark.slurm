@@ -56,9 +56,15 @@ for gpu_id in 0 1 2 3 4 5 6 7; do
         export VLLM_MAX_NUM_SEQS=$VLLM_MAX_NUM_SEQS
         export VLLM_QUEUE_PREFETCH=$VLLM_QUEUE_PREFETCH
         export RABBITMQ_URL=amqp://guest:guest@$(hostname):5672/
+        # Isolate each worker process completely
+        export RAY_DISABLE_IMPORT_WARNING=1
+        export RAY_ADDRESS=  # Disable Ray clustering
+        export RAY_START_REDIS=0
+        export NCCL_P2P_DISABLE=1
+        export NCCL_TIMEOUT=600
         cd "$PROJECT_DIR"
         source "$PROJECT_DIR/.env/bin/activate"
-        llmq worker run Unbabel/Tower-Plus-9B translation-queue
+        llmq worker run Unbabel/Tower-Plus-9B translation-queue --tensor-parallel-size 1
     ) > worker-gpu${gpu_id}-${SLURM_JOB_ID}.out 2> worker-gpu${gpu_id}-${SLURM_JOB_ID}.err &
     
     echo "Worker $gpu_id started"

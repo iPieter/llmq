@@ -55,6 +55,9 @@ class Result(BaseModel):
         default_factory=datetime.utcnow, description="When the result was generated"
     )
 
+    class Config:
+        extra = "allow"  # Allow extra fields to be passed through
+
 
 class QueueStats(BaseModel):
     queue_name: str

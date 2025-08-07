@@ -139,7 +139,7 @@ class BaseWorker(ABC):
                 # For regular jobs, use formatted prompt
                 prompt_for_result = job.get_formatted_prompt()
 
-            # Create result
+            # Create result with required fields
             result = Result(
                 id=job_id,
                 prompt=prompt_for_result,
@@ -148,6 +148,21 @@ class BaseWorker(ABC):
                 duration_ms=duration_ms,
                 timestamp=datetime.utcnow(),
             )
+
+            # Preserve custom fields from original job (like fineweb_id)
+            job_dict = job.dict()
+            for key, value in job_dict.items():
+                if key not in [
+                    "id",
+                    "prompt",
+                    "messages",
+                    "chat_mode",
+                    "result",
+                    "worker_id",
+                    "duration_ms",
+                    "timestamp",
+                ]:
+                    setattr(result, key, value)
 
             # Publish result
             if self.broker is not None and self.results_exchange is not None:
