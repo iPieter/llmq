@@ -78,11 +78,6 @@ class BrokerManager:
         job_queue = await self.channel.declare_queue(
             queue_name,
             durable=True,
-            arguments={
-                "x-message-ttl": self.config.job_ttl_ms,
-                "x-dead-letter-exchange": "",
-                "x-dead-letter-routing-key": f"{queue_name}.failed",
-            },
         )
 
         # Set up results exchange (fanout for multiple consumers)
