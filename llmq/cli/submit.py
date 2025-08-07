@@ -182,12 +182,8 @@ class JobSubmitter:
         if not self.column_mapping and "text" in item:
             job_data["prompt"] = str(item["text"])
 
-        # Always preserve original dataset fields for reference
-        for key, value in item.items():
-            if key not in job_data:
-                # Only add simple types that can be preserved
-                if isinstance(value, (str, int, float, bool)):
-                    job_data[key] = value
+        # Don't add any additional fields - only keep what was explicitly mapped
+        # The column_mapping processing above already handled all the mapped fields
 
         # Set chat_mode=True if we have messages
         if "messages" in job_data and job_data["messages"] is not None:
