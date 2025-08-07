@@ -6,8 +6,13 @@ from rich.console import Console
 from llmq.utils.logging import setup_logging
 
 
-def run_vllm_worker(model_name: str, queue_name: str):
-    """Run vLLM worker using all visible GPUs."""
+def run_vllm_worker(
+    model_name: str,
+    queue_name: str,
+    tensor_parallel_size: Optional[int] = None,
+    data_parallel_size: Optional[int] = None,
+):
+    """Run vLLM worker with configurable parallelism."""
     console = Console()
 
     try:
@@ -17,9 +22,26 @@ def run_vllm_worker(model_name: str, queue_name: str):
         console.print(
             f"[blue]Starting vLLM worker for model '{model_name}' on queue '{queue_name}'[/blue]"
         )
-        console.print("[dim]Worker will use all visible GPUs automatically[/dim]")
 
-        worker = VLLMWorker(model_name, queue_name)
+        if tensor_parallel_size:
+            console.print(
+                f"[dim]Tensor parallel size: {tensor_parallel_size} GPUs per replica[/dim]"
+            )
+
+        if data_parallel_size:
+            console.print(
+                f"[dim]Data parallel size: {data_parallel_size} replicas[/dim]"
+            )
+
+        if not tensor_parallel_size and not data_parallel_size:
+            console.print("[dim]Worker will use all visible GPUs automatically[/dim]")
+
+        worker = VLLMWorker(
+            model_name,
+            queue_name,
+            tensor_parallel_size=tensor_parallel_size,
+            data_parallel_size=data_parallel_size,
+        )
         asyncio.run(worker.run())
 
     except ImportError as e:

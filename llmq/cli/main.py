@@ -122,11 +122,42 @@ def errors(queue_name: str, limit: int):
 @worker.command("run")
 @click.argument("model_name")
 @click.argument("queue_name")
-def worker_run(model_name: str, queue_name: str):
-    """Run vLLM worker using all visible GPUs"""
+@click.option(
+    "--tensor-parallel-size",
+    "-tp",
+    default=None,
+    type=int,
+    help="Tensor parallel size (number of GPUs per model replica)",
+)
+@click.option(
+    "--data-parallel-size",
+    "-dp",
+    default=None,
+    type=int,
+    help="Data parallel size (number of model replicas)",
+)
+def worker_run(
+    model_name: str,
+    queue_name: str,
+    tensor_parallel_size: Optional[int],
+    data_parallel_size: Optional[int],
+):
+    """Run vLLM worker using all visible GPUs
+
+    Examples:
+    \b
+    # Use all GPUs with automatic configuration
+    llmq worker run model-name queue-name
+
+    # Tensor parallelism: split model across 4 GPUs
+    llmq worker run model-name queue-name --tensor-parallel-size 4
+
+    # Data parallelism: 2 model replicas, each using 2 GPUs
+    llmq worker run model-name queue-name --data-parallel-size 2 --tensor-parallel-size 2
+    """
     from llmq.cli.worker import run_vllm_worker
 
-    run_vllm_worker(model_name, queue_name)
+    run_vllm_worker(model_name, queue_name, tensor_parallel_size, data_parallel_size)
 
 
 @worker.command("dummy")
