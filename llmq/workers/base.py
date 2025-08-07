@@ -185,6 +185,15 @@ class BaseWorker(ABC):
                 },
             )
 
+        except ValueError as e:
+            # Handle ValueError specially - don't requeue, just drop the job
+            self.logger.warning(
+                f"Dropping job {job_id} due to ValueError (not requeuing): {e}",
+                extra={"job_id": job_id, "error": str(e)},
+            )
+            # Acknowledge the message to remove it from queue without requeuing
+            await message.ack()
+
         except Exception as e:
             self.logger.error(
                 f"Error processing job {job_id}: {e}",
