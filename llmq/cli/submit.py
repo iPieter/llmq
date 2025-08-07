@@ -54,7 +54,7 @@ class JobSubmitter:
         self.submitted_count = 0
         self.completed_count = 0
         self.pending_jobs: Dict[str, float] = {}  # job_id -> submit_time
-        self.start_time = time.time()
+        self.start_time: Optional[float] = None  # Set when first job is submitted
         self.last_result_time = time.time()  # Track when we last received a result
 
         # Set up graceful shutdown
@@ -301,13 +301,18 @@ class JobSubmitter:
             self.console.print(f"[red]Error: {e}[/red]")
         finally:
             # Show final completion stats
-            total_time = time.time() - self.start_time
-            if total_time > 0 and self.completed_count > 0:
-                completion_rate = self.completed_count / total_time
-                self.console.print(
-                    f"[green]Completed {self.completed_count} jobs in {total_time:.1f}s "
-                    f"({completion_rate:.1f} jobs/sec)[/green]"
-                )
+            if self.start_time is not None:
+                total_time = time.time() - self.start_time
+                if total_time > 0 and self.completed_count > 0:
+                    completion_rate = self.completed_count / total_time
+                    self.console.print(
+                        f"[green]Completed {self.completed_count} jobs in {total_time:.1f}s "
+                        f"({completion_rate:.1f} jobs/sec)[/green]"
+                    )
+                elif self.completed_count > 0:
+                    self.console.print(
+                        f"[green]Completed {self.completed_count} jobs[/green]"
+                    )
             elif self.completed_count > 0:
                 self.console.print(
                     f"[green]Completed {self.completed_count} jobs[/green]"
@@ -361,7 +366,11 @@ class JobSubmitter:
                             chunk = []
 
                             # Update progress
-                            elapsed = time.time() - self.start_time
+                            elapsed = (
+                                time.time() - self.start_time
+                                if self.start_time
+                                else 0 if self.start_time else 0
+                            )
                             submit_rate = (
                                 self.submitted_count / elapsed if elapsed > 0 else 0
                             )
@@ -387,7 +396,7 @@ class JobSubmitter:
                     await self._submit_chunk(chunk)
 
                 # Final progress update
-                elapsed = time.time() - self.start_time
+                elapsed = time.time() - self.start_time if self.start_time else 0
                 submit_rate = self.submitted_count / elapsed if elapsed > 0 else 0
                 complete_rate = self.completed_count / elapsed if elapsed > 0 else 0
                 progress.update(
@@ -445,7 +454,11 @@ class JobSubmitter:
                             chunk = []
 
                             # Update progress
-                            elapsed = time.time() - self.start_time
+                            elapsed = (
+                                time.time() - self.start_time
+                                if self.start_time
+                                else 0 if self.start_time else 0
+                            )
                             submit_rate = (
                                 self.submitted_count / elapsed if elapsed > 0 else 0
                             )
@@ -476,7 +489,7 @@ class JobSubmitter:
                     await self._submit_chunk(chunk)
 
                 # Final progress update
-                elapsed = time.time() - self.start_time
+                elapsed = time.time() - self.start_time if self.start_time else 0
                 submit_rate = self.submitted_count / elapsed if elapsed > 0 else 0
                 complete_rate = self.completed_count / elapsed if elapsed > 0 else 0
                 progress.update(
@@ -502,6 +515,10 @@ class JobSubmitter:
         """Submit a single job and track it."""
         try:
             if self.broker is not None:
+                # Set start_time when first job is submitted (exclude setup/loading time)
+                if self.start_time is None:
+                    self.start_time = time.time()
+
                 await self.broker.publish_job(self.queue_name, job)
                 self.submitted_count += 1
                 self.pending_jobs[job.id] = time.time()
