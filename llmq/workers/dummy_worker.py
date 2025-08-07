@@ -33,7 +33,7 @@ class DummyWorker(BaseWorker):
         await asyncio.sleep(10.0)
 
         # Simple echo response with any 'text' field from the job
-        text = job.dict().get("text", "no text found")
+        text = job.model_dump().get("text", "no text found")
         return f"echo {text}"
 
     async def _cleanup_processor(self) -> None:
@@ -69,7 +69,7 @@ class FilterWorker(BaseWorker):
         """Process job using filtering logic."""
         # Simple filtering example
         formatted_prompt = job.get_formatted_prompt()
-        job_data = job.dict()
+        job_data = job.model_dump()
 
         # Check if job should be accepted
         field_value = job_data.get(self.filter_field, "")

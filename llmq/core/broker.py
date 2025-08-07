@@ -99,7 +99,7 @@ class BrokerManager:
             raise RuntimeError("Not connected to RabbitMQ")
 
         message = aio_pika.Message(
-            job.json().encode(),
+            job.model_dump_json().encode(),
             delivery_mode=DeliveryMode.PERSISTENT,
             message_id=job.id,
         )
@@ -111,7 +111,7 @@ class BrokerManager:
     ) -> None:
         """Publish a result to the results exchange."""
         message = aio_pika.Message(
-            result.json().encode(),
+            result.model_dump_json().encode(),
             delivery_mode=DeliveryMode.PERSISTENT,
             message_id=result.id,
         )
@@ -245,7 +245,7 @@ class BrokerManager:
                     failed_messages.append(
                         {
                             "job_id": job_data.id,
-                            "job_data": job_data.dict(),
+                            "job_data": job_data.model_dump(),
                             "timestamp": message.timestamp,
                         }
                     )

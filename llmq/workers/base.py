@@ -149,8 +149,8 @@ class BaseWorker(ABC):
                 timestamp=datetime.utcnow(),
             )
 
-            # Preserve custom fields from original job (like fineweb_id)
-            job_dict = job.dict()
+            # Preserve custom fields from original job (like url, fineweb_id)
+            job_dict = job.model_dump()
             for key, value in job_dict.items():
                 if key not in [
                     "id",
