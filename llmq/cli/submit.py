@@ -53,7 +53,7 @@ class JobSubmitter:
         self.shutting_down = False
         self.submitted_count = 0
         self.completed_count = 0
-        self.pending_jobs: Dict[str, float] = {}  # job_id -> submit_time
+        self.pending_jobs_count = 0
         self.start_time: Optional[float] = None  # Set when first job is submitted
         self.last_result_time = time.time()  # Track when we last received a result
 
@@ -244,18 +244,18 @@ class JobSubmitter:
             await self.broker.connect()
             await self.broker.setup_queue_infrastructure(self.queue_name)
 
-            # Start result consumer
-            result_task = asyncio.create_task(self._consume_results())
-
             # Start job submission
             submit_task = asyncio.create_task(self._submit_jobs())
 
             # Wait for submission to complete
             await submit_task
 
+            # Start result consumer
+            result_task = asyncio.create_task(self._consume_results())
+
             # Wait for all pending results if we have any
-            if self.pending_jobs and not self.shutting_down:
-                initial_pending = len(self.pending_jobs)
+            if self.pending_jobs_count > 0 and not self.shutting_down:
+                initial_pending = self.pending_jobs_count
                 self.console.print(
                     f"[blue]Waiting for {initial_pending} pending results...[/blue]"
                 )
@@ -264,7 +264,7 @@ class JobSubmitter:
                 )
 
                 # Wait for all results with idle timeout (resets when results come in)
-                while self.pending_jobs and not self.shutting_down:
+                while self.pending_jobs_count > 0 and not self.shutting_down:
                     time_since_last_result = time.time() - self.last_result_time
 
                     if time_since_last_result >= self.timeout:
@@ -277,7 +277,7 @@ class JobSubmitter:
 
                 if self.shutting_down:
                     self.console.print(
-                        f"[yellow]Force quit requested. Abandoning {len(self.pending_jobs)} pending results.[/yellow]"
+                        f"[yellow]Force quit requested. Abandoning {self.pending_jobs_count} pending results.[/yellow]"
                     )
 
             # Cancel result consumer
@@ -512,7 +512,7 @@ class JobSubmitter:
 
                 await self.broker.publish_job(self.queue_name, job)
                 self.submitted_count += 1
-                self.pending_jobs[job.id] = time.time()
+                self.pending_jobs_count += 1
         except Exception as e:
             self.logger.error(f"Failed to submit job {job.id}: {e}")
 
@@ -524,14 +524,14 @@ class JobSubmitter:
                 result = Result.parse_raw(message.body)
 
                 # Output result to stdout (ensure it's not buffered)
-                sys.stdout.write(result.model_dump_json() + "\n")
+                result_json = result.model_dump_json() + "\n"
+                sys.stdout.write(result_json)
                 sys.stdout.flush()
 
                 # Track completion
-                if result.id in self.pending_jobs:
-                    del self.pending_jobs[result.id]
-                    self.completed_count += 1
-                    self.last_result_time = time.time()  # Reset idle timeout
+                self.completed_count += 1
+                self.pending_jobs_count -= 1
+                self.last_result_time = time.time()  # Reset idle timeout
 
                 await message.ack()
 
