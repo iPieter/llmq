@@ -37,7 +37,7 @@ class Job(BaseModel):
             raise ValueError("Cannot format prompt: prompt is None")
         format_data = {
             k: v
-            for k, v in self.dict().items()
+            for k, v in self.model_dump().items()
             if k not in ["id", "prompt", "messages", "chat_mode"]
         }
         return self.prompt.format(**format_data)
