@@ -1,38 +1,243 @@
-# llmq: High-Performance vLLM Job Queue Package
+# llmq
 
-A Python package that efficiently processes millions of LLM inference jobs using vLLM workers and RabbitMQ. Maximize GPU utilization through intelligent batching while providing simple CLI tools for job submission and monitoring.
+[![PyPI version](https://badge.fury.io/py/llmq.svg)](https://pypi.org/project/llmq/)
+[![CI](https://github.com/ipieter/llmq/workflows/CI/badge.svg)](https://github.com/ipieter/llmq/actions/workflows/ci.yml)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-## 🚀 Quick Start: Translation Example
+**High-Performance Inference Queueing** - Process millions of LLM inference jobs with GPU acceleration using vLLM workers and RabbitMQ. Ideal for synthetic data generation, translation pipelines, and batch inference workloads.
 
-### 1. Installation
+> **Note**: API may change until v1.0 as I'm actively developing new features.
+
+## Features
+
+- **High-Performance**: GPU-accelerated inference with vLLM batching
+- **Scalable**: RabbitMQ-based distributed queuing, so never let your GPUs idle  
+- **Simple**: Unix-friendly CLI with piped input/output
+- **Flexible**: Supports many standard LLM operations for synthetic data generation. You can combine different models and process Huggingface datasets directly
+
+**Not for real-time use**: llmq is designed for (laaarge) batch processing, not chat applications or real-time inference. It doesn't support token streaming or optimized time-to-first-token (TTFT).
+
+## Quick Start
+
+### Installation
 
 ```bash
-# Clone the repository
-git clone <repository-url>
-cd llmq
-
-# Install in development mode
-pip install -e .
+pip install llmq
 ```
 
-### 2. Start RabbitMQ
-
-**Using Docker (Recommended):**
+### Start RabbitMQ
 
 ```bash
-# Start RabbitMQ with management UI
 docker run -d --name rabbitmq \
-  -p 5672:5672 \
-  -p 15672:15672 \
+  -p 5672:5672 -p 15672:15672 \
   -e RABBITMQ_DEFAULT_USER=llmq \
   -e RABBITMQ_DEFAULT_PASS=llmq123 \
   rabbitmq:3-management
-
-# Or using docker-compose (see docker-compose.yml below)
-docker-compose up -d
 ```
 
-**Docker Compose Setup (`docker-compose.yml`):**
+### Run Your First Job
+
+```bash
+# Start a worker
+llmq worker run Unbabel/Tower-Plus-9B translation-queue
+
+# Submit jobs (in another terminal)
+echo '{"id": "hello", "prompt": "Translate to Spanish: Hello world"}' | llmq submit translation-queue -
+
+# Results stream back immediately
+{"id": "hello", "result": "Hola mundo", "worker_id": "worker-gpu0", "duration_ms": 45.2}
+```
+
+## Use Cases
+
+### Translation Pipeline
+
+Process translation jobs with specialized multilingual models:
+
+```bash
+# Start translation worker
+llmq worker run Unbabel/Tower-Plus-9B translation-queue
+
+# Example jobs file (jobs.jsonl)
+{"id": "job1", "messages": [{"role": "user", "content": "Translate to Spanish: {text}"}], "text": "Hello world"}
+{"id": "job2", "messages": [{"role": "user", "content": "Translate to French: {text}"}], "text": "Good morning"}
+
+# Process jobs
+llmq submit translation-queue jobs.jsonl > results.jsonl
+```
+
+### Data Cleaning at Scale
+
+Clean and process large datasets with custom prompts:
+
+```bash
+# Start worker for data cleaning
+llmq worker run meta-llama/Llama-3.2-3B-Instruct cleaning-queue
+
+# Submit HuggingFace dataset directly
+llmq submit cleaning-queue HuggingFaceFW/fineweb \
+  --map 'messages=[{"role": "user", "content": "Clean this text: {text}"}]' \
+  --max-samples 10000 > cleaned_data.jsonl
+```
+
+### RL Training Rollouts
+
+Currently requires manual orchestration - you need to manually switch between queues and manage workers for different training phases. For example, you'd start policy workers, submit rollout jobs, tear down those workers, then start reward model workers to score the rollouts.
+
+Future versions will add automatic model switching and queue coordination to streamline complex RL workflows with policy models, reward models, and value functions.
+
+## Worker Types
+
+**Production Workers:**
+- `llmq worker run <model-name> <queue-name>` - GPU-accelerated inference with vLLM
+
+**Development & Testing:**
+- `llmq worker dummy <queue-name>` - Simple echo worker for testing (no GPU required)
+
+All workers support the same configuration options and can be scaled horizontally by running multiple instances.
+
+## Core Commands
+
+### Job Management
+
+```bash
+# Submit jobs from file or stdin
+llmq submit <queue-name> <jobs.jsonl>
+llmq submit <queue-name> -  # from stdin
+
+# Monitor progress
+llmq status <queue-name>
+```
+
+### Worker Management
+
+```bash
+# Start GPU-accelerated worker
+llmq worker run <model-name> <queue-name>
+
+# Start test worker (no GPU required)
+llmq worker dummy <queue-name>
+
+# Start filter worker (job filtering)
+llmq worker filter <queue-name> <field> <value>
+
+# Multiple workers: run command multiple times
+```
+
+### Monitoring
+
+```bash
+# Check connection and queues
+llmq status
+✅ Connected to RabbitMQ
+URL: amqp://llmq:llmq123@localhost:5672/
+
+# View queue statistics
+llmq status <queue-name>
+
+┏━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━┓
+┃ Metric                         ┃ Value               ┃
+┡━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━━━━━┩
+│ Queue Name                     │ translation-queue   │
+│ Total Messages                 │ 0                   │
+│ ├─ Ready (awaiting processing) │ 0                   │
+│ └─ Unacknowledged (processing) │ 0                   │
+│ Total Bytes                    │ 0 bytes (0.0 MB)    │
+│ ├─ Ready Bytes                 │ 0 bytes             │
+│ └─ Unacked Bytes               │ 0 bytes             │
+│ Active Consumers               │ 0                   │
+│ Timestamp                      │ 2025-08-08 11:36:31 │
+└────────────────────────────────┴─────────────────────┘
+```
+
+## Configuration
+
+Configure via environment variables or `.env` file:
+
+```bash
+# Connection
+RABBITMQ_URL=amqp://llmq:llmq123@localhost:5672/
+
+# Performance tuning
+VLLM_QUEUE_PREFETCH=100              # Messages per worker
+VLLM_GPU_MEMORY_UTILIZATION=0.9     # GPU memory usage
+VLLM_MAX_NUM_SEQS=256               # Batch size
+
+# Job processing
+LLMQ_CHUNK_SIZE=10000               # Bulk submission size
+```
+
+## Job Formats
+
+### Modern Chat Format (Recommended)
+
+```json
+{
+  "id": "job-1",
+  "messages": [
+    {"role": "user", "content": "Translate to {language}: {text}"}
+  ],
+  "text": "Hello world",
+  "language": "Spanish"
+}
+```
+
+### Traditional Prompt Format
+
+```json
+{
+  "id": "job-1", 
+  "prompt": "Translate to {language}: {text}",
+  "text": "Hello world",
+  "language": "Spanish"
+}
+```
+
+Both formats support template substitution with `{variable}` syntax.
+
+## Architecture
+
+llmq creates two components per queue:
+- **Job Queue**: `<queue-name>` - Where jobs are submitted
+- **Results Exchange**: `<queue-name>.results` - Streams results back
+
+Workers use vLLM for GPU acceleration and RabbitMQ for reliable job distribution. Results stream back in real-time as jobs complete.
+
+## Performance Tips
+
+- **GPU Memory**: Adjust `VLLM_GPU_MEMORY_UTILIZATION` (default: 0.9)
+- **Concurrency**: Tune `VLLM_QUEUE_PREFETCH` based on model size
+- **Batch Size**: Set `VLLM_MAX_NUM_SEQS` for optimal throughput
+- **Multiple GPUs**: vLLM automatically uses all visible GPUs. You can also start multiple workers yourself for data parallel processing, which [is actually recommended for larger deployements](https://docs.vllm.ai/en/latest/serving/data_parallel_deployment.html#external-load-balancing).
+
+## Testing
+
+```bash
+# Install with test dependencies
+pip install llmq[test]
+
+# Run unit tests (no external dependencies)
+pytest -m unit
+
+# Run integration tests (requires RabbitMQ)
+pytest -m integration
+```
+
+## Links
+
+- **PyPI**: https://pypi.org/project/llmq/
+- **Issues**: https://github.com/ipieter/llmq/issues
+- **Docker Compose Setup**: [docker-compose.yml](#docker-compose-setup)
+- **HPC/SLURM/Singularity Setup**: [Singularity Setup](#singularity-setup)
+
+---
+
+## Advanced Setup
+
+### Docker Compose Setup
+
+Create `docker-compose.yml`:
 
 ```yaml
 version: '3.8'
@@ -41,8 +246,8 @@ services:
     image: rabbitmq:3-management
     container_name: llmq-rabbitmq
     ports:
-      - "5672:5672"    # AMQP port
-      - "15672:15672"  # Management UI
+      - "5672:5672"
+      - "15672:15672"
     environment:
       RABBITMQ_DEFAULT_USER: llmq
       RABBITMQ_DEFAULT_PASS: llmq123
@@ -54,273 +259,86 @@ volumes:
   rabbitmq_data:
 ```
 
-**HPC Clusters with Singularity:**
+Run with: `docker-compose up -d`
+
+### Singularity Setup
+
+For HPC clusters:
 
 ```bash
-# Use the provided utility script
+# Use provided utility
 ./utils/start_singularity_broker.sh
 
-# Set connection URL
+# Set connection URL  
 export RABBITMQ_URL=amqp://guest:guest@$(hostname):5672/
 
-# test the connection
+# Test connection
 llmq status
 ```
 
-### 3. Configure Environment
+### Performance Tuning
 
-Create a `.env` file in your project root:
-
+#### GPU Memory Management
 ```bash
-# RabbitMQ Configuration
-RABBITMQ_URL=amqp://llmq:llmq123@localhost:5672/
+# Reduce for large models
+export VLLM_GPU_MEMORY_UTILIZATION=0.7
 
-# Worker Configuration  
-VLLM_QUEUE_PREFETCH=100
-VLLM_GPU_MEMORY_UTILIZATION=0.9
-VLLM_MAX_NUM_SEQS=256
-
-# Job Configuration
-LLMQ_CHUNK_SIZE=10000
-
-# Logging
-LLMQ_LOG_LEVEL=INFO
+# Increase for small models
+export VLLM_GPU_MEMORY_UTILIZATION=0.95
 ```
 
-### 4. Test Connection
-
+#### Concurrency Tuning
 ```bash
-# Check if RabbitMQ is accessible
-llmq status
-
-# Should show: ✅ Connected to RabbitMQ
-```
-
-### 5. Translation Workflow Example
-
-**Use the provided translation jobs (`example_jobs.jsonl`):**
-
-The example jobs file contains multilingual translation tasks using the chat message format for the Unbabel/Tower-Plus-9B model:
-
-```json
-{"id": "translate-001", "messages": [{"role": "user", "content": "Translate the following English source text to Portuguese (Portugal):\nEnglish: {source_text}\nPortuguese (Portugal): "}], "source_text": "Hello world!"}
-{"id": "translate-002", "messages": [{"role": "user", "content": "Translate the following Spanish source text to French:\nSpanish: {source_text}\nFrench: "}], "source_text": "¿Cómo estás hoy?"}
-```
-
-**Start the translation worker:**
-
-```bash
-# Start Unbabel Tower-Plus-9B worker (uses all visible GPUs)
-llmq worker run Unbabel/Tower-Plus-9B translation-queue
-```
-
-**Submit translation jobs:**
-
-```bash
-# Submit jobs and stream results to file
-llmq submit translation-queue example_jobs.jsonl > results.jsonl
-
-# Monitor progress in another terminal
-llmq status translation-queue
-```
-
-**View results:**
-
-```bash
-# Check the translated results
-cat results.jsonl
-```
-
-This workflow demonstrates:
-- **Chat-based model support** for modern translation models
-- **Template substitution** with `{source_text}` variables
-- **Real-time result streaming** to `results.jsonl`
-- **GPU-accelerated inference** with vLLM batching
-
-## 📋 CLI Commands Reference
-
-### Job Submission
-
-```bash
-# Submit jobs from JSONL file (streams results to stdout, progress to stderr)
-llmq submit <queue-name> <jobs.jsonl> > results.jsonl
-
-# Example result format:
-{"id": "job-123", "prompt": "Translate Hello to Spanish", "result": "Hola", "worker_id": "worker-gpu0", "duration_ms": 23.5, "timestamp": "2024-01-01T00:00:00Z"}
-```
-
-### Worker Management
-
-```bash
-# Real vLLM workers (automatically uses all visible GPUs)
-llmq worker run <model-name> <queue-name>
-
-# Dummy workers (for testing, no GPU/vLLM required)
-llmq worker dummy <queue-name>
-
-# Filter workers (for simple job processing)
-llmq worker filter <queue-name> <field> <value>
-
-# Multiple workers: run the same command in multiple terminals
-```
-
-### Monitoring & Health
-
-```bash
-# Check RabbitMQ connection
-llmq status
-
-# Show queue statistics
-llmq status <queue-name>
-
-# Basic health check
-llmq health <queue-name>
-
-# Show recent errors
-llmq errors <queue-name>
-```
-
-## ⚙️ Configuration
-
-Configuration is loaded in the following order (later values override earlier ones):
-
-1. **Default values**
-2. **`.env` file**
-3. **Environment variables**
-4. **CLI arguments**
-
-### Environment Variables
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `RABBITMQ_URL` | `amqp://guest:guest@localhost:5672/` | RabbitMQ connection URL |
-| `VLLM_QUEUE_PREFETCH` | `100` | Messages per worker to prefetch |
-| `VLLM_GPU_MEMORY_UTILIZATION` | `0.9` | GPU memory utilization ratio |
-| `VLLM_MAX_NUM_SEQS` | `None` | Max sequences in vLLM batch |
-| `LLMQ_CHUNK_SIZE` | `10000` | Jobs to read from JSONL at once |
-| `LLMQ_LOG_LEVEL` | `INFO` | Logging level |
-
-
-## 🏗️ Architecture
-
-### Queue Infrastructure
-
-**For each queue name, llmq creates:**
-
-- **Job Queue**: `<queue-name>` - Where jobs are submitted
-- **Results Exchange**: `<queue-name>.results` - Fanout exchange for results
-- **Dead Letter Queue**: `<queue-name>.failed` - Failed jobs after retries
-
-### Message Flow
-
-```
-Jobs File → Submit CLI → RabbitMQ → vLLM Workers → Results Exchange → Submit CLI → stdout
-                ↓             ↓                         ↓
-           Progress (stderr)  Job Queue          Dead Letter Queue
-```
-
-### Worker Design
-
-- **Async Processing**: Non-blocking job consumption
-- **Dynamic Batching**: Leverages vLLM's internal batching
-- **Error Handling**: Failed jobs go to dead letter queue
-- **Graceful Shutdown**: Handle SIGINT/SIGTERM properly
-- **GPU Isolation**: Each worker uses specific GPU via `CUDA_VISIBLE_DEVICES`
-
-## 🔧 Performance Tuning
-
-### GPU Memory
-
-```bash
-# Adjust GPU memory utilization (0.0-1.0)
-export VLLM_GPU_MEMORY_UTILIZATION=0.85
-
-# Set maximum batch size
-export VLLM_MAX_NUM_SEQS=128
-```
-
-### RabbitMQ Prefetch
-
-```bash
-# More messages per worker = higher throughput but more memory
+# Higher throughput, more memory usage
 export VLLM_QUEUE_PREFETCH=200
 
-# Fewer messages = lower memory but potentially lower throughput  
+# Lower memory usage, potentially lower throughput
 export VLLM_QUEUE_PREFETCH=50
 ```
 
-### Job Processing
-
+#### Batch Processing
 ```bash
-# Larger chunks = faster submission but more memory
-export LLMQ_CHUNK_SIZE=50000
+# Larger batches for better GPU utilization
+export VLLM_MAX_NUM_SEQS=512
 
-# Smaller chunks = lower memory but slower submission
-export LLMQ_CHUNK_SIZE=1000
+# Smaller batches for lower latency
+export VLLM_MAX_NUM_SEQS=64
 ```
 
-## 📊 Example Workflows
-
-### Translation with Unbabel Tower-Plus-9B
+### Multi-GPU Setup
 
 ```bash
-# Terminal 1: Start vLLM worker with all GPUs
-CUDA_VISIBLE_DEVICES=0,1,2,3 llmq worker run Unbabel/Tower-Plus-9B translation-queue
+# Use specific GPUs
+CUDA_VISIBLE_DEVICES=0,1,2,3 llmq worker run model-name queue-name
 
-# Terminal 2: Submit translation jobs
-llmq submit translation-queue example_jobs.jsonl > results.jsonl 2> progress.log
-
-# Terminal 3: Monitor in real-time
-watch -n 1 'llmq status translation-queue'
+# vLLM automatically distributes across all visible GPUs
 ```
 
-### Dataset Translation with HuggingFace Datasets
+### Troubleshooting
 
+#### Connection Issues
 ```bash
-# Submit translation jobs directly from HuggingFace dataset
-llmq submit translation-queue HuggingFaceFW/fineweb --map 'messages=[{"role": "user", "content": "Translate the following English source text to Dutch:\nEnglish: {text}\nDutch: "}]' --max-samples 5000 > results.jsonl
-```
+# Check RabbitMQ status
+docker ps
+docker logs rabbitmq
 
-### Testing with Dummy Workers
-
-```bash
-# Terminal 1: Start multiple dummy workers
-llmq worker dummy translation-queue &
-llmq worker dummy translation-queue &
-
-# Terminal 2: Submit and monitor
-llmq submit translation-queue example_jobs.jsonl > results.jsonl
-```
-
-## 🚨 Troubleshooting
-
-### Connection Issues
-
-```bash
-# Check connection
-llmq status
-
-# Common fixes:
-docker ps  # Ensure RabbitMQ is running
-docker logs rabbitmq  # Check RabbitMQ logs
-
-# Test with curl
+# Test management API
 curl -u llmq:llmq123 http://localhost:15672/api/overview
 ```
 
-### Worker Issues
-
+#### Worker Issues
 ```bash
-# Check worker logs (structured JSON)
-llmq worker run model-name queue-name 2>&1 | jq .
+# Check GPU memory
+nvidia-smi
 
-# GPU memory issues
-nvidia-smi  # Check GPU memory usage
-export VLLM_GPU_MEMORY_UTILIZATION=0.7  # Reduce utilization
+# Reduce GPU utilization if needed
+export VLLM_GPU_MEMORY_UTILIZATION=0.7
+
+# View structured logs
+llmq worker run model queue 2>&1 | jq .
 ```
 
-### Queue Issues
-
+#### Queue Issues
 ```bash
 # Check queue health
 llmq health queue-name
@@ -328,108 +346,6 @@ llmq health queue-name
 # View failed jobs
 llmq errors queue-name --limit 10
 
-# Purge failed jobs (RabbitMQ management UI)
-# http://localhost:15672 → Queues → queue-name.failed → Purge
+# Access RabbitMQ management UI
+open http://localhost:15672
 ```
-
-### Performance Issues
-
-```bash
-# Monitor processing rate
-llmq status queue-name
-
-# Check GPU utilization
-nvidia-smi -l 1
-
-# Adjust prefetch for your workload
-export VLLM_QUEUE_PREFETCH=50   # Lower for large models
-export VLLM_QUEUE_PREFETCH=200  # Higher for small models
-```
-
-## 🔒 Security Notes
-
-- **Never commit credentials** to version control
-- **Use environment variables** for sensitive configuration
-- **Secure RabbitMQ** in production with proper authentication
-- **Monitor resource usage** to prevent DoS from large jobs
-
-## 🧪 Testing
-
-### Unit Testing
-
-```bash
-# Install test dependencies
-pip install -e ".[test]"
-
-# Run all tests
-pytest
-
-# Run with coverage report
-pytest --cov=llmq --cov-report=html
-
-# Run only unit tests (fast, no external dependencies)
-pytest -m unit
-
-# Run specific test file
-pytest tests/test_models.py
-
-# Run with verbose output
-pytest -v
-
-# Run integration tests (requires RabbitMQ)
-pytest -m integration
-```
-
-### Test Categories
-
-- **Unit Tests** (`pytest -m unit`): Fast tests with mocked dependencies
-- **Integration Tests** (`pytest -m integration`): Tests with real RabbitMQ
-- **Slow Tests** (`pytest -m "not slow"`): Exclude long-running tests
-
-### Test Mode Setup
-
-```bash
-# Start test RabbitMQ
-docker run -d --name test-rabbitmq -p 5673:5672 rabbitmq:3
-
-# Use test environment
-export RABBITMQ_URL=amqp://guest:guest@localhost:5673/
-
-# Run basic tests
-llmq status  # Should connect to test instance
-```
-
-
-## 💬 Job Formats
-
-llmq supports both traditional prompt-based and modern chat message formats:
-
-### Traditional Prompt Format
-
-```json
-{"id": "job-1", "prompt": "Translate {text} to {language}", "text": "Hello", "language": "Spanish"}
-```
-
-### Chat Message Format (for modern models)
-
-```json
-{"id": "translation-1", "messages": [{"role": "user", "content": "Translate the following English source text to Portuguese (Portugal):\nEnglish: {source_text}\nPortuguese (Portugal): "}], "source_text": "Hello world!"}
-```
-
-**Features:**
-- Template support with `{variable}` substitution
-- Multi-turn conversations with system/user/assistant roles
-- Automatic format detection
-- Backward compatibility
-
-
----
-
-**🎯 Need Help?**
-
-- **Issues**: Report bugs on GitHub Issues
-- **Documentation**: Check `llmq --help` and command-specific help
-- **Performance**: See the Performance Tuning section above
-- **RabbitMQ UI**: Access http://localhost:15672 (guest/guest or llmq/llmq123)
-
-The `llmq` package prioritizes **performance** and **reliability** while maintaining a **Unix-philosophy-friendly** interface where components can be easily piped together. Happy processing! 🚀
