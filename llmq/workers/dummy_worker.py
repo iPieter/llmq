@@ -30,7 +30,7 @@ class DummyWorker(BaseWorker):
     async def _process_job(self, job: Job) -> str:
         """Process job using simple echo logic."""
         # Consistent 1 second delay
-        await asyncio.sleep(10.0)
+        await asyncio.sleep(1.0)
 
         # Simple echo response with any 'text' field from the job
         text = job.model_dump().get("text", "no text found")

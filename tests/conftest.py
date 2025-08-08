@@ -129,7 +129,6 @@ def mock_broker_manager(
             return_value=(
                 mock_rabbitmq_queue,
                 mock_rabbitmq_exchange,
-                mock_rabbitmq_queue,
             )
         )
         broker_instance.publish_job = AsyncMock()

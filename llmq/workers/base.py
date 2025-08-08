@@ -201,7 +201,7 @@ class BaseWorker(ABC):
                 exc_info=True,
             )
 
-            # Reject message (will go to dead letter queue after retries)
+            # Reject message (will be requeued for retry)
             await message.reject(requeue=True)
 
     async def cleanup(self) -> None:

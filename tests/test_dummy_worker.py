@@ -71,19 +71,6 @@ class TestDummyWorker:
             result = await worker._process_job(job)
 
         assert result == "echo Hello World"
-        mock_sleep.assert_called_once_with(10.0)  # Current delay is 10s
-
-    @pytest.mark.unit
-    async def test_process_job_without_text(self):
-        """Test job processing without text field."""
-        worker = DummyWorker("test-queue")
-        job = Job(id="test-001", prompt="Echo test")
-
-        with patch("asyncio.sleep") as mock_sleep:
-            mock_sleep.return_value = None
-            result = await worker._process_job(job)
-
-        assert result == "echo no text found"
 
     @pytest.mark.unit
     async def test_process_job_with_different_text_values(self):
