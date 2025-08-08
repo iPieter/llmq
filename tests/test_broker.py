@@ -87,12 +87,10 @@ class TestBrokerManager:
         mock_channel = AsyncMock()
         broker.channel = mock_channel
 
-        mock_dead_letter_queue = AsyncMock()
         mock_job_queue = AsyncMock()
         mock_results_exchange = AsyncMock()
 
         mock_channel.declare_queue.side_effect = [
-            mock_dead_letter_queue,  # Dead letter queue
             mock_job_queue,  # Job queue
         ]
         mock_channel.declare_exchange.return_value = mock_results_exchange
@@ -108,7 +106,7 @@ class TestBrokerManager:
         assert results_exchange == mock_results_exchange
 
         # Verify calls
-        assert mock_channel.declare_queue.call_count == 2
+        assert mock_channel.declare_queue.call_count == 1
         assert mock_channel.declare_exchange.call_count == 1
 
     @pytest.mark.unit
@@ -239,7 +237,7 @@ class TestBrokerManager:
         broker.channel = mock_channel
 
         with patch.object(broker, "setup_queue_infrastructure") as mock_setup:
-            mock_setup.return_value = (mock_queue, AsyncMock(), AsyncMock())
+            mock_setup.return_value = (mock_queue, AsyncMock())
 
             callback = AsyncMock()
             result_queue = await broker.consume_jobs("test-queue", callback)

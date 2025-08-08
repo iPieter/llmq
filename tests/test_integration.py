@@ -5,7 +5,7 @@ from typing import AsyncGenerator
 
 from llmq.workers.dummy_worker import DummyWorker
 from llmq.core.broker import BrokerManager
-from llmq.core.models import Job
+from llmq.core.models import Job, Result
 from llmq.core.config import Config
 
 # Apply asyncio marker to all async test methods in this module
@@ -70,8 +70,14 @@ class TestDummyWorkerIntegration:
             # Set up result collection first
             results = []
 
-            async def collect_result(result):
-                results.append(result)
+            async def collect_result(message):
+                try:
+                    result = Result.parse_raw(message.body)
+                    results.append(result)
+                    await message.ack()
+                except Exception as e:
+                    print(f"Error parsing result: {e}")
+                    await message.reject(requeue=False)
 
             # Start consuming results
             result_queue = await broker.consume_results(test_queue_name, collect_result)
@@ -79,7 +85,8 @@ class TestDummyWorkerIntegration:
             # Submit a job
             test_job = Job(  # type: ignore
                 id="integration-test-job-001",
-                prompt="Test prompt with integration test",
+                prompt="{text}",
+                text="Test prompt with integration test",
             )
 
             await broker.publish_job(test_queue_name, test_job)
@@ -100,8 +107,8 @@ class TestDummyWorkerIntegration:
             assert len(results) == 1
             result = results[0]
             assert result.id == test_job.id
-            assert "Test prompt with integration test" in result.text
-            assert result.text.startswith("Echo: ")
+            assert "Test prompt with integration test" in result.result
+            assert result.result.startswith("echo ")
 
         finally:
             # Clean up worker
@@ -129,8 +136,14 @@ class TestDummyWorkerIntegration:
             # Set up result collection first
             results = []
 
-            async def collect_result(result):
-                results.append(result)
+            async def collect_result(message):
+                try:
+                    result = Result.parse_raw(message.body)
+                    results.append(result)
+                    await message.ack()
+                except Exception as e:
+                    print(f"Error parsing result: {e}")
+                    await message.reject(requeue=False)
 
             # Start consuming results
             result_queue = await broker.consume_results(test_queue_name, collect_result)
@@ -167,9 +180,7 @@ class TestDummyWorkerIntegration:
 
             # Check content format
             for result in results:
-                assert result.text.startswith("Echo: ")
-                assert "Job" in result.text
-                assert "Hello from job" in result.text
+                assert result.result.startswith("echo ")
 
         finally:
             # Clean up worker

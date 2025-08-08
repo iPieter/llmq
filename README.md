@@ -81,7 +81,6 @@ VLLM_GPU_MEMORY_UTILIZATION=0.9
 VLLM_MAX_NUM_SEQS=256
 
 # Job Configuration
-LLMQ_JOB_TTL_MINUTES=30
 LLMQ_CHUNK_SIZE=10000
 
 # Logging
@@ -198,7 +197,6 @@ Configuration is loaded in the following order (later values override earlier on
 | `VLLM_QUEUE_PREFETCH` | `100` | Messages per worker to prefetch |
 | `VLLM_GPU_MEMORY_UTILIZATION` | `0.9` | GPU memory utilization ratio |
 | `VLLM_MAX_NUM_SEQS` | `None` | Max sequences in vLLM batch |
-| `LLMQ_JOB_TTL_MINUTES` | `30` | Job time-to-live in minutes |
 | `LLMQ_CHUNK_SIZE` | `10000` | Jobs to read from JSONL at once |
 | `LLMQ_LOG_LEVEL` | `INFO` | Logging level |
 

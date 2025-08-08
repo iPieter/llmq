@@ -62,7 +62,7 @@ class BrokerManager:
         Set up queue infrastructure for a given queue name.
 
         Returns:
-            Tuple of (job_queue, results_exchange, dead_letter_queue)
+            Tuple of (job_queue, results_exchange)
         """
         if not self.channel:
             raise RuntimeError("Not connected to RabbitMQ")
