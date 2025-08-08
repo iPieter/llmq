@@ -101,13 +101,11 @@ class TestBrokerManager:
         (
             job_queue,
             results_exchange,
-            dead_letter_queue,
         ) = await broker.setup_queue_infrastructure("test-queue")
 
         # Verify results
         assert job_queue == mock_job_queue
         assert results_exchange == mock_results_exchange
-        assert dead_letter_queue == mock_dead_letter_queue
 
         # Verify calls
         assert mock_channel.declare_queue.call_count == 2
