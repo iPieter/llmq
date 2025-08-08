@@ -57,7 +57,7 @@ class BrokerManager:
 
     async def setup_queue_infrastructure(
         self, queue_name: str
-    ) -> tuple[AbstractQueue, AbstractExchange, AbstractQueue]:
+    ) -> tuple[AbstractQueue, AbstractExchange]:
         """
         Set up queue infrastructure for a given queue name.
 
@@ -67,14 +67,7 @@ class BrokerManager:
         if not self.channel:
             raise RuntimeError("Not connected to RabbitMQ")
 
-        # Set up dead letter queue first
-        dead_letter_queue = await self.channel.declare_queue(
-            f"{queue_name}.failed",
-            durable=True,
-            arguments={"x-message-ttl": self.config.job_ttl_ms},
-        )
-
-        # Set up main job queue with dead letter routing
+        # Set up main job queue
         job_queue = await self.channel.declare_queue(
             queue_name,
             durable=True,
@@ -86,7 +79,7 @@ class BrokerManager:
         )
 
         self.logger.info(f"Queue infrastructure set up for {queue_name}")
-        return job_queue, results_exchange, dead_letter_queue
+        return job_queue, results_exchange
 
     async def publish_job(self, queue_name: str, job: Job) -> None:
         """Publish a job to the specified queue."""
@@ -118,7 +111,7 @@ class BrokerManager:
         if not self.channel:
             raise RuntimeError("Not connected to RabbitMQ")
 
-        job_queue, _, _ = await self.setup_queue_infrastructure(queue_name)
+        job_queue, _ = await self.setup_queue_infrastructure(queue_name)
         await job_queue.consume(callback)
         return job_queue
 

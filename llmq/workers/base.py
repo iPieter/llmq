@@ -84,7 +84,7 @@ class BaseWorker(ABC):
             self.logger.info(f"Set concurrency to {self.concurrency} jobs")
 
         # Set up queue infrastructure
-        _, self.results_exchange, _ = await self.broker.setup_queue_infrastructure(
+        _, self.results_exchange = await self.broker.setup_queue_infrastructure(
             self.queue_name
         )
 
