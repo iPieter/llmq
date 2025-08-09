@@ -55,7 +55,9 @@ class JobSubmitter:
         self.completed_count = 0
         self.pending_jobs_count = 0
         self.start_time: Optional[float] = None  # Set when first job is submitted
-        self.last_result_time = time.time()  # Track when we last received a result
+        self.last_result_time: Optional[float] = (
+            None  # Track when we last received a result
+        )
 
         # Set up graceful shutdown
         signal.signal(signal.SIGINT, self._signal_handler)
@@ -252,6 +254,9 @@ class JobSubmitter:
 
             # Start result consumer
             result_task = asyncio.create_task(self._consume_results())
+
+            # Initialize timeout tracking now that submission is complete
+            self.last_result_time = time.time()
 
             # Wait for all pending results if we have any
             if self.pending_jobs_count > 0 and not self.shutting_down:

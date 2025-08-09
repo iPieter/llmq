@@ -87,6 +87,14 @@ Currently requires manual orchestration - you need to manually switch between qu
 
 Future versions will add automatic model switching and queue coordination to streamline complex RL workflows with policy models, reward models, and value functions.
 
+## Real-World Usage
+
+`llmq` has been used to process the following datasets:
+
+- **[fineweb-edu-dutch-mt](https://huggingface.co/datasets/pdelobelle/fineweb-edu-dutch-mt)** - Machine translation of a subset of fineweb-edu to Dutch using a 72B MT model.
+- **[fineweb-dutch-synthetic-mt](https://huggingface.co/datasets/pdelobelle/fineweb-dutch-synthetic-mt)** - Translated The synthetic split of Germanweb to Dutch using a 9B MT model.
+
+
 ## Worker Types
 
 **Production Workers:**
@@ -349,3 +357,7 @@ llmq errors queue-name --limit 10
 # Access RabbitMQ management UI
 open http://localhost:15672
 ```
+
+## Acknowledgments
+
+🇪🇺 Development and testing of this project was supported by computational resources provided by EuroHPC under grant EHPC-AIF-2025PG01-128.
