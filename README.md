@@ -5,9 +5,44 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-**High-Performance Inference Queueing** - Process millions of LLM inference jobs with GPU acceleration using vLLM workers and RabbitMQ. Ideal for synthetic data generation, translation pipelines, and batch inference workloads.
+**A Scheduler for Batched LLM Inference** - Like OpenAI's Batch API, but for self-hosted open-source models. Submit millions of inference jobs, let workers process them with vLLM-backed inference, and stream results back to a single file. Ideal for synthetic data generation, translation pipelines, and batch inference workloads.
 
 > **Note**: API may change until v1.0 as I'm actively developing new features.
+
+<details>
+<summary><strong>📋 Table of Contents</strong></summary>
+
+- [Features](#features)
+- [Quick Start](#quick-start)
+  - [Installation](#installation)
+  - [Start RabbitMQ](#start-rabbitmq)
+  - [Run Your First Job](#run-your-first-job)
+- [How It Works](#how-it-works)
+- [Use Cases](#use-cases)
+  - [Translation Pipeline](#translation-pipeline)
+  - [Data Cleaning at Scale](#data-cleaning-at-scale)
+  - [RL Training Rollouts](#rl-training-rollouts)
+- [Real-World Usage](#real-world-usage)
+- [Worker Types](#worker-types)
+- [Core Commands](#core-commands)
+  - [Job Management](#job-management)
+  - [Worker Management](#worker-management)
+  - [Monitoring](#monitoring)
+- [Configuration](#configuration)
+- [Job Formats](#job-formats)
+- [Architecture](#architecture)
+- [Performance Tips](#performance-tips)
+- [Testing](#testing)
+- [Links](#links)
+- [Advanced Setup](#advanced-setup)
+  - [Docker Compose Setup](#docker-compose-setup)
+  - [Singularity Setup](#singularity-setup)
+  - [Performance Tuning](#performance-tuning)
+  - [Multi-GPU Setup](#multi-gpu-setup)
+  - [Troubleshooting](#troubleshooting)
+- [Acknowledgments](#acknowledgments)
+
+</details>
 
 ## Features
 
@@ -48,6 +83,14 @@ echo '{"id": "hello", "prompt": "Translate to Spanish: Hello world"}' | llmq sub
 # Results stream back immediately
 {"id": "hello", "result": "Hola mundo", "worker_id": "worker-gpu0", "duration_ms": 45.2}
 ```
+
+## How It Works
+
+Similar to OpenAI's Batch API, llmq separates job submission from processing:
+
+1. **Submit jobs** - Upload thousands of inference requests to a queue
+2. **Workers process** - GPU-accelerated workers pull jobs and generate responses  
+3. **Stream results** - Get real-time results as jobs complete, with automatic timeout handling
 
 ## Use Cases
 
