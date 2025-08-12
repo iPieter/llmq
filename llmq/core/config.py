@@ -38,6 +38,11 @@ class Config(BaseModel):
         description="Maximum model length (context window) for vLLM",
     )
 
+    vllm_max_tokens: int = Field(
+        default_factory=lambda: int(os.getenv("VLLM_MAX_TOKENS", "8192")),
+        description="Maximum tokens to generate per request",
+    )
+
     job_ttl_minutes: int = Field(
         default_factory=lambda: int(os.getenv("LLMQ_JOB_TTL_MINUTES", "30")),
         description="Job TTL in minutes",

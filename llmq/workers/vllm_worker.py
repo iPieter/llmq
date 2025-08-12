@@ -126,7 +126,7 @@ class VLLMWorker(BaseWorker):
         """Process job using vLLM engine."""
         # Configure sampling parameters
         sampling_params = SamplingParams(
-            temperature=0.7, max_tokens=1024, stop=["\n\n"]
+            temperature=0.7, max_tokens=self.config.vllm_max_tokens, stop=["\n\n"]
         )
 
         if self.engine is None:
