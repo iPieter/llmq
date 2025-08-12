@@ -102,10 +102,10 @@ class VLLMWorker(BaseWorker):
             if data_parallel_size and data_parallel_size > 1:
                 engine_args.data_parallel_size = data_parallel_size
 
-            if self.config.vllm_max_num_seqs:
+            if self.config.vllm_max_num_seqs is not None:
                 engine_args.max_num_seqs = self.config.vllm_max_num_seqs
 
-            if self.config.vllm_max_model_len:
+            if self.config.vllm_max_model_len is not None:
                 engine_args.max_model_len = self.config.vllm_max_model_len
 
             self.logger.info("Creating AsyncLLMEngine...")
