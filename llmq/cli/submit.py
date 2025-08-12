@@ -74,6 +74,10 @@ class JobSubmitter:
 
     def _is_huggingface_dataset(self) -> bool:
         """Check if the source appears to be a Hugging Face dataset."""
+        # Special case: "-" means stdin, not a dataset
+        if self.jobs_source == "-":
+            return False
+
         # If it's a file path that exists, it's not a dataset
         if Path(self.jobs_source).exists():
             return False
@@ -428,7 +432,10 @@ class JobSubmitter:
                 "Submitting jobs", total=total_lines, submit_rate=0.0, complete_rate=0.0
             )
 
-            with open(self.jobs_file, "r") as f:
+            # Handle stdin or regular file
+            f = sys.stdin if self.jobs_source == "-" else open(self.jobs_file, "r")
+
+            try:
                 chunk = []
 
                 for line_num, line in enumerate(f, 1):
@@ -494,6 +501,10 @@ class JobSubmitter:
                     submit_rate=submit_rate,
                     complete_rate=complete_rate,
                 )
+            finally:
+                # Close file if it's not stdin
+                if self.jobs_source != "-":
+                    f.close()
 
         self.console.print(
             f"[green]Submitted {self.submitted_count} jobs to queue '{self.queue_name}'[/green]"
@@ -560,6 +571,10 @@ class JobSubmitter:
         """Count total lines in the jobs file."""
         if self.is_dataset:
             return self.max_samples or 0  # Can't easily count dataset items
+
+        # Can't count lines from stdin, return 0 to indicate unknown total
+        if self.jobs_source == "-":
+            return 0
 
         try:
             with open(self.jobs_file, "r") as f:
