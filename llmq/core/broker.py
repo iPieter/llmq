@@ -81,6 +81,54 @@ class BrokerManager:
         self.logger.info(f"Queue infrastructure set up for {queue_name}")
         return job_queue, results_exchange
 
+    async def setup_pipeline_infrastructure(
+        self, pipeline_name: str, stages: list[str]
+    ) -> tuple[dict[str, tuple[AbstractQueue, AbstractExchange]], AbstractExchange]:
+        """
+        Set up pipeline infrastructure with topic-based routing.
+
+        Returns:
+            Tuple of (infrastructure_dict, pipeline_exchange) where infrastructure_dict
+            maps stage names to (job_queue, results_exchange) tuples
+        """
+        if not self.channel:
+            raise RuntimeError("Not connected to RabbitMQ")
+
+        # Set up pipeline routing exchange
+        pipeline_exchange = await self.channel.declare_exchange(
+            f"pipeline.{pipeline_name}.routing", ExchangeType.TOPIC, durable=True
+        )
+
+        infrastructure = {}
+
+        for i, stage in enumerate(stages):
+            stage_queue_name = f"pipeline.{pipeline_name}.{stage}"
+
+            # Set up stage job queue
+            job_queue = await self.channel.declare_queue(
+                stage_queue_name,
+                durable=True,
+            )
+
+            # Set up stage results exchange
+            results_exchange = await self.channel.declare_exchange(
+                f"{stage_queue_name}.results", ExchangeType.FANOUT, durable=True
+            )
+
+            # Bind stage queue to receive jobs from previous stage completion
+            if i > 0:  # Not the first stage
+                prev_stage = stages[i - 1]
+                routing_key = f"pipeline.{pipeline_name}.stage.{prev_stage}.complete"
+                await job_queue.bind(pipeline_exchange, routing_key=routing_key)
+                self.logger.info(
+                    f"Stage {stage} bound to previous stage {prev_stage} completion"
+                )
+
+            infrastructure[stage] = (job_queue, results_exchange)
+
+        self.logger.info(f"Pipeline infrastructure set up for {pipeline_name}")
+        return infrastructure, pipeline_exchange
+
     async def publish_job(self, queue_name: str, job: Job) -> None:
         """Publish a job to the specified queue."""
         if not self.channel:
@@ -105,6 +153,35 @@ class BrokerManager:
         )
 
         await results_exchange.publish(message, routing_key="")
+
+    async def publish_pipeline_result(
+        self,
+        pipeline_exchange: AbstractExchange,
+        result: Result,
+        pipeline_name: str,
+        stage_name: str,
+    ) -> None:
+        """Publish a pipeline result that routes to the next stage."""
+        # Convert result to next stage job
+        # Preserve any extra pipeline metadata
+        extra_fields = result.model_extra if result.model_extra else {}
+        next_job = Job(
+            id=result.id,  # Keep same ID for tracking
+            prompt=result.result,  # Previous result becomes next prompt
+            **extra_fields,
+        )
+
+        message = aio_pika.Message(
+            next_job.model_dump_json().encode(),
+            delivery_mode=DeliveryMode.PERSISTENT,
+            message_id=result.id,
+        )
+
+        # Publish with routing key for stage completion
+        routing_key = f"pipeline.{pipeline_name}.stage.{stage_name}.complete"
+        await pipeline_exchange.publish(message, routing_key=routing_key)
+
+        self.logger.info(f"Pipeline result routed: {stage_name} -> next stage")
 
     async def consume_jobs(self, queue_name: str, callback: Callable) -> AbstractQueue:
         """Set up job consumption with the provided callback."""
