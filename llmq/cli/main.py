@@ -88,6 +88,83 @@ def submit(
     )
 
 
+@cli.command("pipeline")
+@click.argument("pipeline_config_path")
+@click.argument("jobs_source")  # Can be file path or dataset name
+@click.option("--timeout", default=300, help="Timeout in seconds to wait for results")
+@click.option(
+    "--map",
+    "column_mapping",
+    multiple=True,
+    help="Column mapping: --map prompt=text --map target_lang=language",
+)
+@click.option(
+    "--max-samples", type=int, help="Maximum number of samples to process from dataset"
+)
+@click.option("--split", default="train", help="Dataset split to use (default: train)")
+@click.option("--subset", help="Dataset subset/config to use")
+def pipeline_submit(
+    pipeline_config_path: str,
+    jobs_source: str,
+    timeout: int,
+    column_mapping: tuple,
+    max_samples: int,
+    split: str,
+    subset: str,
+):
+    """Submit jobs through a multi-stage pipeline
+
+    Pipeline configuration is defined in YAML format:
+    \b
+    name: document-processing
+    stages:
+      - name: deduplication
+        worker: bloom-filter
+      - name: translation
+        worker: vllm
+        config:
+          model: microsoft/DialoGPT-medium
+      - name: formatting
+        worker: vllm
+
+    Workers are launched separately using the pipeline command:
+    \b
+    llmq worker pipeline pipeline.yaml deduplication
+    llmq worker pipeline pipeline.yaml translation
+    llmq worker pipeline pipeline.yaml formatting
+
+    Examples:
+    \b
+    # Run pipeline on JSONL file
+    llmq pipeline pipeline.yaml jobs.jsonl
+
+    # Run pipeline on dataset with column mapping
+    llmq pipeline pipeline.yaml HuggingFaceFW/fineweb --map prompt=text --max-samples 100
+    """
+    from llmq.cli.submit import run_pipeline_submit
+
+    # Parse column mapping from CLI format
+    mapping_dict = {}
+    for mapping in column_mapping:
+        if "=" in mapping:
+            key, value = mapping.split("=", 1)
+            mapping_dict[key] = value
+        else:
+            click.echo(
+                f"Warning: Invalid mapping format '{mapping}'. Use key=value format."
+            )
+
+    run_pipeline_submit(
+        pipeline_config_path,
+        jobs_source,
+        timeout,
+        mapping_dict if mapping_dict else None,
+        max_samples,
+        split,
+        subset,
+    )
+
+
 @cli.command()
 @click.argument("queue_name", required=False)
 def status(queue_name: Optional[str] = None):
@@ -197,6 +274,35 @@ def worker_filter(queue_name: str, filter_field: str, filter_value: str):
     from llmq.cli.worker import run_filter_worker
 
     run_filter_worker(queue_name, filter_field, filter_value)
+
+
+@worker.command("pipeline")
+@click.argument("pipeline_config_path")
+@click.argument("stage_name")
+@click.option(
+    "--concurrency",
+    "-c",
+    default=None,
+    type=int,
+    help="Number of jobs to process concurrently",
+)
+def worker_pipeline(pipeline_config_path: str, stage_name: str, concurrency: int):
+    """Run worker for a specific pipeline stage
+
+    Loads the pipeline configuration and runs the appropriate worker type
+    for the specified stage with its configuration.
+
+    Examples:
+    \b
+    # Run deduplication stage
+    llmq worker pipeline document-pipeline.yaml deduplication
+
+    # Run with custom concurrency
+    llmq worker pipeline document-pipeline.yaml translation --concurrency 4
+    """
+    from llmq.cli.worker import run_pipeline_worker
+
+    run_pipeline_worker(pipeline_config_path, stage_name, concurrency)
 
 
 if __name__ == "__main__":

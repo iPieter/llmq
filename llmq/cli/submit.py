@@ -21,6 +21,7 @@ from aio_pika.abc import AbstractIncomingMessage
 from llmq.core.config import get_config
 from llmq.core.broker import BrokerManager
 from llmq.core.models import Job, Result
+from llmq.core.pipeline import PipelineConfig
 from llmq.utils.logging import setup_logging
 
 
@@ -581,6 +582,232 @@ class JobSubmitter:
             return 0
 
 
+class PipelineSubmitter:
+    """Handles pipeline job submission and result monitoring."""
+
+    def __init__(
+        self,
+        pipeline_config: PipelineConfig,
+        jobs_source: str,
+        timeout: int = 300,
+        column_mapping: Optional[Dict[str, str]] = None,
+        max_samples: Optional[int] = None,
+        split: str = "train",
+        subset: Optional[str] = None,
+    ):
+        self.pipeline_config = pipeline_config
+        self.jobs_source = jobs_source
+        self.timeout = timeout
+        self.column_mapping = column_mapping or {}
+        self.max_samples = max_samples
+        self.split = split
+        self.subset = subset
+        self.config = get_config()
+        self.logger = setup_logging("llmq.pipeline")
+
+        self.broker: Optional[BrokerManager] = None
+        self.console = Console(file=sys.stderr)
+        self.running = True
+        self.shutting_down = False
+        self.submitted_count = 0
+        self.completed_count = 0
+        self.pending_jobs_count = 0
+        self.start_time: Optional[float] = None
+        self.last_result_time: Optional[float] = None
+
+        # Set up graceful shutdown
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+
+        # Detect if source is a dataset or file
+        self.is_dataset = self._is_huggingface_dataset()
+        if self.is_dataset:
+            self.console.print(
+                f"[blue]Detected Hugging Face dataset: {self.jobs_source}[/blue]"
+            )
+
+    def _is_huggingface_dataset(self) -> bool:
+        """Check if the source appears to be a Hugging Face dataset."""
+        if self.jobs_source == "-":
+            return False
+        if Path(self.jobs_source).exists():
+            return False
+        if "/" in self.jobs_source or not any(
+            self.jobs_source.endswith(ext) for ext in [".jsonl", ".json", ".txt"]
+        ):
+            return True
+        return False
+
+    def _signal_handler(self, signum: int, frame: Any) -> None:
+        """Handle Ctrl+C gracefully."""
+        if not self.shutting_down:
+            self.console.print(
+                "\n[yellow]Received interrupt signal. Stopping pipeline...[/yellow]"
+            )
+            self.running = False
+            self.shutting_down = True
+        else:
+            self.console.print("\n[red]Force quitting...[/red]")
+            sys.exit(1)
+
+    async def run(self):
+        """Main pipeline submission process."""
+        try:
+            # Initialize broker connection
+            self.broker = BrokerManager(self.config)
+            await self.broker.connect()
+
+            # Set up pipeline infrastructure
+            self.console.print(
+                f"[blue]Setting up pipeline: {self.pipeline_config.name}[/blue]"
+            )
+            stage_names = [stage.name for stage in self.pipeline_config.stages]
+            infrastructure, pipeline_exchange = (
+                await self.broker.setup_pipeline_infrastructure(
+                    self.pipeline_config.name, stage_names
+                )
+            )
+
+            # Display pipeline stages
+            self.console.print("[blue]Pipeline stages:[/blue]")
+            for i, stage in enumerate(self.pipeline_config.stages):
+                arrow = " → " if i < len(self.pipeline_config.stages) - 1 else ""
+                self.console.print(f"  {i+1}. {stage.name} ({stage.worker}){arrow}")
+
+            # Submit jobs to first stage
+            first_stage = self.pipeline_config.stages[0]
+            first_stage_queue = self.pipeline_config.get_stage_queue_name(
+                first_stage.name
+            )
+
+            self.console.print(
+                f"[green]Submitting jobs to first stage: {first_stage.name}[/green]"
+            )
+
+            # Use existing JobSubmitter logic for the first stage
+            first_stage_submitter = JobSubmitter(
+                first_stage_queue,
+                self.jobs_source,
+                self.timeout,
+                self.column_mapping,
+                self.max_samples,
+                self.split,
+                self.subset,
+            )
+            first_stage_submitter.broker = self.broker  # Reuse our broker connection
+
+            # Submit jobs to first stage
+            await first_stage_submitter._submit_jobs()
+
+            # Monitor final stage results
+            final_stage = self.pipeline_config.stages[-1]
+            final_stage_queue = self.pipeline_config.get_stage_queue_name(
+                final_stage.name
+            )
+
+            self.console.print(
+                f"[blue]Monitoring results from final stage: {final_stage.name}[/blue]"
+            )
+
+            # Set up result monitoring
+            result_task = asyncio.create_task(
+                self._consume_final_results(final_stage_queue)
+            )
+
+            # Update tracking from first stage submitter
+            self.submitted_count = first_stage_submitter.submitted_count
+            self.pending_jobs_count = first_stage_submitter.pending_jobs_count
+            self.start_time = first_stage_submitter.start_time
+            self.last_result_time = time.time()
+
+            # Wait for pipeline completion
+            if self.pending_jobs_count > 0 and not self.shutting_down:
+                self.console.print(
+                    f"[blue]Pipeline processing {self.pending_jobs_count} jobs through {len(stage_names)} stages...[/blue]"
+                )
+                self.console.print(
+                    f"[dim]Idle timeout: {self.timeout}s (resets when results arrive)[/dim]"
+                )
+
+                # Wait for all results with idle timeout
+                while self.pending_jobs_count > 0 and not self.shutting_down:
+                    time_since_last_result = time.time() - self.last_result_time
+
+                    if time_since_last_result >= self.timeout:
+                        self.console.print(
+                            f"[yellow]Idle timeout: No results received for {self.timeout}s. Exiting.[/yellow]"
+                        )
+                        break
+
+                    await asyncio.sleep(0.5)
+
+            # Cancel result consumer
+            result_task.cancel()
+            try:
+                await result_task
+            except asyncio.CancelledError:
+                pass
+
+        except Exception as e:
+            self.logger.error(f"Pipeline error: {e}", exc_info=True)
+            self.console.print(f"[red]Pipeline error: {e}[/red]")
+        finally:
+            # Show final completion stats
+            if self.start_time is not None and self.completed_count > 0:
+                total_time = time.time() - self.start_time
+                if total_time > 0:
+                    completion_rate = self.completed_count / total_time
+                    self.console.print(
+                        f"[green]Pipeline completed {self.completed_count} jobs in {total_time:.1f}s "
+                        f"({completion_rate:.1f} jobs/sec)[/green]"
+                    )
+                else:
+                    self.console.print(
+                        f"[green]Pipeline completed {self.completed_count} jobs[/green]"
+                    )
+
+            if self.broker:
+                await self.broker.disconnect()
+
+    async def _consume_final_results(self, final_stage_queue: str):
+        """Consume results from the final pipeline stage."""
+
+        async def result_handler(message: AbstractIncomingMessage):
+            try:
+                result = Result.parse_raw(message.body)
+
+                # Output result to stdout
+                result_json = result.model_dump_json() + "\n"
+                sys.stdout.write(result_json)
+                sys.stdout.flush()
+
+                # Track completion
+                self.completed_count += 1
+                self.pending_jobs_count -= 1
+                self.last_result_time = time.time()
+
+                await message.ack()
+
+            except Exception as e:
+                self.logger.error(f"Error processing pipeline result: {e}")
+                await message.reject(requeue=False)
+
+        try:
+            if self.broker is None:
+                raise RuntimeError("Broker not initialized")
+
+            await self.broker.consume_results(final_stage_queue, result_handler)
+
+            # Keep consuming until cancelled
+            while True:
+                await asyncio.sleep(1)
+
+        except asyncio.CancelledError:
+            pass
+        except Exception as e:
+            self.logger.error(f"Pipeline result consumer error: {e}")
+
+
 def run_submit(
     queue_name: str,
     jobs_source: str,
@@ -597,5 +824,42 @@ def run_submit(
 
     try:
         asyncio.run(submitter.run())
+    except KeyboardInterrupt:
+        pass  # Handled gracefully by signal handler
+
+
+def run_pipeline_submit(
+    pipeline_config_path: str,
+    jobs_source: str,
+    timeout: int = 300,
+    column_mapping: Optional[Dict[str, str]] = None,
+    max_samples: Optional[int] = None,
+    split: str = "train",
+    subset: Optional[str] = None,
+):
+    """Run the pipeline submission process."""
+    try:
+        # Load pipeline configuration
+        pipeline_config = PipelineConfig.from_yaml_file(Path(pipeline_config_path))
+
+        submitter = PipelineSubmitter(
+            pipeline_config,
+            jobs_source,
+            timeout,
+            column_mapping,
+            max_samples,
+            split,
+            subset,
+        )
+
+        asyncio.run(submitter.run())
+    except FileNotFoundError as e:
+        console = Console(file=sys.stderr)
+        console.print(f"[red]Pipeline configuration file not found: {e}[/red]")
+        sys.exit(1)
+    except Exception as e:
+        console = Console(file=sys.stderr)
+        console.print(f"[red]Pipeline configuration error: {e}[/red]")
+        sys.exit(1)
     except KeyboardInterrupt:
         pass  # Handled gracefully by signal handler
