@@ -5,7 +5,7 @@
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/release/python-390/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-<img src="assets/render1755117250879.gif" alt="LLMQ Demo" width="600">
+<img src="https://github.com/iPieter/llmq/raw/main/assets/render1755117250879.gif" alt="LLMQ Demo" width="600">
 
 
 **A Scheduler for Batched LLM Inference** - Like OpenAI's Batch API, but for self-hosted open-source models. Submit millions of inference jobs, let workers process them with vLLM-backed inference, and stream results back to a single file. Ideal for synthetic data generation, translation pipelines, and batch inference workloads.
