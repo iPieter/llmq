@@ -21,6 +21,7 @@ dependencies = [
     "rich>=13.9.0",
     "python-dotenv>=1.0.1",
     "httpx>=0.27.0",
+    "PyYAML>=6.0.0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -40,6 +41,7 @@ test = [
     "pytest-mock>=3.12.0",
     "pytest-cov>=6.0.0",
     "faker>=30.0.0",
+    "types-PyYAML>=6.0.0",
 ]
 dev = [
     "llmq[test]",
