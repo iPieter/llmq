@@ -149,7 +149,7 @@ class JobSubmitter:
 
         # Apply column mapping
         for job_field, mapping_value in self.column_mapping.items():
-            self.logger.info(f"Processing mapping: {job_field} = {mapping_value}")
+            self.logger.debug(f"Processing mapping: {job_field} = {mapping_value}")
             if (mapping_value.startswith("{") and mapping_value.endswith("}")) or (
                 mapping_value.startswith("[") and mapping_value.endswith("]")
             ):
