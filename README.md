@@ -78,10 +78,11 @@ docker run -d --name rabbitmq \
 llmq worker run Unbabel/Tower-Plus-9B translation-queue
 
 # Submit jobs (in another terminal)
-echo '{"id": "hello", "messages": [{"role": "user", "content": "Translate the following German source text to English:\nGerman: Ich bin eine Giraffe.\nEnglish: "}]}' | llmq submit translation-queue -
+echo '{"id": "hello", "messages": [{"role": "user", "content": "Translate the following German source text to English:\\nGerman: Ich  bin eine Giraffe.\\nEnglish: "}]}' \
+    | llmq submit translation-queue -
 
 # Results stream back immediately
-{"id": "hello", "result": "Hola mundo", "worker_id": "worker-gpu0", "duration_ms": 45.2}
+{"id": "hello", "result": "I am a giraffe.", "worker_id": "worker-gpu0", "duration_ms": 45.2}
 ```
 
 ## How It Works
