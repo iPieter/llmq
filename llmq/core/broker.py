@@ -253,3 +253,18 @@ class BrokerManager:
             self.logger.error(f"Error getting failed messages: {e}")
 
         return failed_messages
+
+    async def clear_queue(self, queue_name: str) -> int:
+        """Clear all messages from a queue. Returns the number of messages purged."""
+        if not self.channel:
+            raise RuntimeError("Not connected to RabbitMQ")
+
+        try:
+            job_queue = await self.channel.declare_queue(queue_name, passive=True)
+            purge_result = await job_queue.purge()
+            purged_count = purge_result.message_count or 0
+            self.logger.info(f"Cleared {purged_count} messages from queue {queue_name}")
+            return purged_count
+        except Exception as e:
+            self.logger.error(f"Failed to clear queue {queue_name}: {e}")
+            raise

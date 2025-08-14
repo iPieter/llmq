@@ -82,6 +82,19 @@ async def get_failed_messages_async(queue_name: str, limit: int):
         await broker.disconnect()
 
 
+async def clear_queue_async(queue_name: str):
+    """Clear queue asynchronously."""
+    broker = BrokerManager(get_config())
+    try:
+        await broker.connect()
+        purged_count = await broker.clear_queue(queue_name)
+        return purged_count
+    except Exception as e:
+        return None, str(e)
+    finally:
+        await broker.disconnect()
+
+
 def show_status(queue_name: str):
     """Show queue status and statistics."""
     console = Console()
@@ -303,4 +316,33 @@ def show_connection_status():
     except Exception as e:
         logger = setup_logging("llmq.cli.monitor")
         logger.error(f"Connection status error: {e}", exc_info=True)
+        console.print(f"[red]Error: {e}[/red]")
+
+
+def clear_queue(queue_name: str):
+    """Clear all messages from a queue."""
+    console = Console()
+
+    try:
+        with console.status(f"Clearing queue '{queue_name}'..."):
+            result = asyncio.run(clear_queue_async(queue_name))
+
+        if isinstance(result, tuple):
+            purged_count, error = result
+            if purged_count is None:
+                console.print(f"[red]Error clearing queue: {error}[/red]")
+                return
+        else:
+            purged_count = result
+
+        if purged_count == 0:
+            console.print(f"[yellow]Queue '{queue_name}' was already empty[/yellow]")
+        else:
+            console.print(
+                f"[green]✅ Cleared {purged_count} messages from queue '{queue_name}'[/green]"
+            )
+
+    except Exception as e:
+        logger = setup_logging("llmq.cli.monitor")
+        logger.error(f"Clear queue error: {e}", exc_info=True)
         console.print(f"[red]Error: {e}[/red]")
