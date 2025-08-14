@@ -85,6 +85,37 @@ class TestJob:
 
         assert "prompt" in str(exc_info.value)
 
+    def test_job_stop_sequences(self):
+        """Test job creation with custom stop sequences."""
+        job = Job(
+            id="test-001",
+            prompt="Generate text",
+            stop=["</end>", "\n\n", "STOP"],
+        )
+
+        assert job.stop == ["</end>", "\n\n", "STOP"]
+
+    def test_job_stop_sequences_defaults(self):
+        """Test job creation with default stop sequence behavior."""
+        job = Job(
+            id="test-001",
+            prompt="Generate text",
+        )
+
+        assert job.stop is None  # Will use EOS token by default
+
+    def test_job_formatted_prompt_excludes_stop_fields(self):
+        """Test that stop sequence fields are excluded from formatting."""
+        job = Job(
+            id="test-001",
+            prompt="Say {greeting}",
+            greeting="hello",
+            stop=["</end>"],
+        )
+
+        formatted = job.get_formatted_prompt()
+        assert formatted == "Say hello"
+
 
 class TestResult:
     """Test Result model."""
