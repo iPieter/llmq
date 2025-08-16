@@ -119,6 +119,18 @@ def errors(queue_name: str, limit: int):
     show_errors(queue_name, limit)
 
 
+@cli.command()
+@click.argument("queue_name")
+@click.confirmation_option(
+    prompt="Are you sure you want to clear all messages from the queue?"
+)
+def clear(queue_name: str):
+    """Clear all messages from a queue"""
+    from llmq.cli.monitor import clear_queue
+
+    clear_queue(queue_name)
+
+
 @worker.command("run")
 @click.argument("model_name")
 @click.argument("queue_name")

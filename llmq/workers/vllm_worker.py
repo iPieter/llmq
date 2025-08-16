@@ -124,17 +124,34 @@ class VLLMWorker(BaseWorker):
 
     async def _process_job(self, job: Job) -> str:
         """Process job using vLLM engine."""
-        # Configure sampling parameters
-        sampling_params = SamplingParams(
-            temperature=0.7, max_tokens=self.config.vllm_max_tokens, stop=["\n\n"]
-        )
-
         if self.engine is None:
             self.logger.error("vLLM engine is None - initialization must have failed")
             self.logger.error(
                 f"Worker initialized: {hasattr(self, 'broker') and self.broker is not None}"
             )
             raise RuntimeError("vLLM engine not initialized")
+
+        # Get tokenizer once for both EOS token and chat template needs
+        tokenizer = await self.engine.get_tokenizer()
+
+        # Determine stop sequences
+        stop_sequences = []
+
+        if job.stop is not None:
+            # User provided custom stop sequences - use exactly what they specified
+            stop_sequences.extend(job.stop)
+        else:
+            # Default behavior: use EOS token only
+            eos_token = getattr(tokenizer, "eos_token", None)
+            if eos_token:
+                stop_sequences.append(eos_token)
+
+        # Configure sampling parameters
+        sampling_params = SamplingParams(
+            temperature=0.7,
+            max_tokens=self.config.vllm_max_tokens,
+            stop=stop_sequences if stop_sequences else None,
+        )
 
         results = []
 
@@ -143,8 +160,7 @@ class VLLMWorker(BaseWorker):
             if not job.messages:
                 raise ValueError("Chat mode enabled but no messages provided")
 
-            # Use vLLM engine's tokenizer to format chat template
-            tokenizer = await self.engine.get_tokenizer()
+            # Use tokenizer to format chat template
             prompt = tokenizer.apply_chat_template(  # type: ignore
                 conversation=job.messages, tokenize=False, add_generation_prompt=True
             )

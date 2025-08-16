@@ -12,6 +12,9 @@ class Job(BaseModel):
     chat_mode: bool = Field(
         default=False, description="Use chat API instead of generate API"
     )
+    stop: Optional[List[str]] = Field(
+        None, description="Stop sequences for generation. If None, uses EOS token only"
+    )
 
     class Config:
         extra = "allow"
@@ -38,7 +41,7 @@ class Job(BaseModel):
         format_data = {
             k: v
             for k, v in self.model_dump().items()
-            if k not in ["id", "prompt", "messages", "chat_mode"]
+            if k not in ["id", "prompt", "messages", "chat_mode", "stop"]
         }
         return self.prompt.format(**format_data)
 
