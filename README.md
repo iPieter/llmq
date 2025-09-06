@@ -139,11 +139,11 @@ Future versions will add automatic model switching and queue coordination to str
 
 `llmq` has been used in production to process large-scale translation datasets on HPC clusters. The table below shows the datasets processed, their outputs, and the SLURM scripts used:
 
-| Source Dataset | Model | Output Dataset | SLURM Script |
-|---|---|---|---|
-| 🤗 [fineweb-edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) | Tower-Plus-72B | 📊 *fineweb-edu-german-mt* | [`utils/run_german_72b_translation.slurm`](utils/run_german_72b_translation.slurm) |
-| 🤗 [fineweb-edu](https://huggingface.co/datasets/HuggingFaceFW/fineweb-edu) | Tower-Plus-9B | 📊 [fineweb-edu-dutch-mt](https://huggingface.co/datasets/pdelobelle/fineweb-edu-dutch-mt) | [`utils/run_dutch_9b_translation.slurm`](utils/run_dutch_9b_translation.slurm) |
-| 🤗 [nemotron-post-training-reordered](https://huggingface.co/datasets/pdelobelle/nemotron-post-training-reordered) | Tower-Plus-9B | 📊 [nemotron-dutch-mt](https://huggingface.co/datasets/pdelobelle/nemotron-dutch-mt) | [`utils/run_dutch_nemotron.slurm`](utils/run_dutch_nemotron.slurm) |
+| Dataset Created | Model Used | SLURM Script |
+|---|---|---|
+| 🤗 *fineweb-edu-german-mt* | Tower-Plus-72B | [`run_german_72b_translation.slurm`](utils/run_german_72b_translation.slurm) |
+| 🤗 [fineweb-edu-dutch-mt](https://huggingface.co/datasets/pdelobelle/fineweb-edu-dutch-mt) | Tower-Plus-9B | [`run_dutch_9b_translation.slurm`](utils/run_dutch_9b_translation.slurm) |
+| 🤗 [nemotron-dutch-mt](https://huggingface.co/datasets/pdelobelle/nemotron-dutch-mt) | Tower-Plus-9B | [`run_dutch_nemotron.slurm`](utils/run_dutch_nemotron.slurm) |
 
 
 
