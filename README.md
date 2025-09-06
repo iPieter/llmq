@@ -141,7 +141,7 @@ Future versions will add automatic model switching and queue coordination to str
 
 | Dataset Created | Model Used | SLURM Script |
 |---|---|---|
-| 🤗 *fineweb-edu-german-mt* | Tower-Plus-72B | [`run_german_72b_translation.slurm`](utils/run_german_72b_translation.slurm) |
+| 🤗 [fineweb-edu-german-mt](https://huggingface.co/datasets/pdelobelle/fineweb-edu-german-mt) | Tower-Plus-72B | [`run_german_72b_translation.slurm`](utils/run_german_72b_translation.slurm) |
 | 🤗 [fineweb-edu-dutch-mt](https://huggingface.co/datasets/pdelobelle/fineweb-edu-dutch-mt) | Tower-Plus-9B | [`run_dutch_9b_translation.slurm`](utils/run_dutch_9b_translation.slurm) |
 | 🤗 [nemotron-dutch-mt](https://huggingface.co/datasets/pdelobelle/nemotron-dutch-mt) | Tower-Plus-9B | [`run_dutch_nemotron.slurm`](utils/run_dutch_nemotron.slurm) |
 
