@@ -20,7 +20,11 @@ def worker():
 @cli.command()
 @click.argument("queue_name")
 @click.argument("jobs_source")  # Can be file path or dataset name
-@click.option("--timeout", default=300, help="Timeout in seconds to wait for results")
+@click.option(
+    "--timeout",
+    default=300,
+    help="Timeout in seconds to wait for results (only with --stream)",
+)
 @click.option(
     "--map",
     "column_mapping",
@@ -32,6 +36,11 @@ def worker():
 )
 @click.option("--split", default="train", help="Dataset split to use (default: train)")
 @click.option("--subset", help="Dataset subset/config to use")
+@click.option(
+    "--stream",
+    is_flag=True,
+    help="Stream results back immediately (backwards compatibility mode)",
+)
 def submit(
     queue_name: str,
     jobs_source: str,
@@ -40,8 +49,15 @@ def submit(
     max_samples: int,
     split: str,
     subset: str,
+    stream: bool,
 ):
     """Submit jobs from JSONL file or Hugging Face dataset to queue
+
+    By default, jobs are submitted and you can receive results separately using:
+    llmq receive <queue-name>
+
+    The --stream flag provides backwards compatibility - it submits jobs AND
+    streams results back immediately (like the old behavior).
 
     The --map option supports three types of mappings:
     1. Simple column mapping: --map field=column
@@ -50,8 +66,14 @@ def submit(
 
     Examples:
     \b
-    # From JSONL file
+    # Submit jobs only (new default behavior)
     llmq submit translation-queue example_jobs.jsonl
+    
+    # Receive results separately 
+    llmq receive translation-queue > results.jsonl
+
+    # Submit with streaming (backwards compatibility)
+    llmq submit translation-queue example_jobs.jsonl --stream > results.jsonl
 
     # Simple mapping from dataset column to job field
     llmq submit translation-queue HuggingFaceFW/fineweb --map source_text=text --max-samples 1000
@@ -85,13 +107,18 @@ def submit(
         max_samples,
         split,
         subset,
+        stream,
     )
 
 
 @cli.command("pipeline")
 @click.argument("pipeline_config_path")
 @click.argument("jobs_source")  # Can be file path or dataset name
-@click.option("--timeout", default=300, help="Timeout in seconds to wait for results")
+@click.option(
+    "--timeout",
+    default=300,
+    help="Timeout in seconds to wait for results (only with --stream)",
+)
 @click.option(
     "--map",
     "column_mapping",
@@ -103,6 +130,11 @@ def submit(
 )
 @click.option("--split", default="train", help="Dataset split to use (default: train)")
 @click.option("--subset", help="Dataset subset/config to use")
+@click.option(
+    "--stream",
+    is_flag=True,
+    help="Stream results back immediately (backwards compatibility mode)",
+)
 def pipeline_submit(
     pipeline_config_path: str,
     jobs_source: str,
@@ -111,6 +143,7 @@ def pipeline_submit(
     max_samples: int,
     split: str,
     subset: str,
+    stream: bool,
 ):
     """Submit jobs through a multi-stage pipeline
 
@@ -162,6 +195,7 @@ def pipeline_submit(
         max_samples,
         split,
         subset,
+        stream,
     )
 
 
@@ -194,6 +228,44 @@ def errors(queue_name: str, limit: int):
     from llmq.cli.monitor import show_errors
 
     show_errors(queue_name, limit)
+
+
+@cli.command()
+@click.argument("queue_name")
+@click.option("--timeout", default=300, help="Timeout in seconds to wait for results")
+def receive(queue_name: str, timeout: int):
+    """Receive results from a queue
+
+    Examples:
+    \\b
+    # Receive results from queue
+    llmq receive translation-queue > results.jsonl
+
+    # With custom timeout
+    llmq receive translation-queue --timeout 600
+    """
+    from llmq.cli.receive import run_receive
+
+    run_receive(queue_name, timeout)
+
+
+@cli.command("receive-pipeline")
+@click.argument("pipeline_config_path")
+@click.option("--timeout", default=300, help="Timeout in seconds to wait for results")
+def receive_pipeline(pipeline_config_path: str, timeout: int):
+    """Receive results from a pipeline
+
+    Examples:
+    \\b
+    # Receive pipeline results
+    llmq receive-pipeline pipeline.yaml > results.jsonl
+
+    # With custom timeout
+    llmq receive-pipeline pipeline.yaml --timeout 600
+    """
+    from llmq.cli.receive import run_pipeline_receive
+
+    run_pipeline_receive(pipeline_config_path, timeout)
 
 
 @cli.command()
