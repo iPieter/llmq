@@ -37,6 +37,7 @@ class JobSubmitter:
         max_samples: Optional[int] = None,
         split: str = "train",
         subset: Optional[str] = None,
+        stream: bool = False,
     ):
         self.queue_name = queue_name
         self.jobs_source = jobs_source
@@ -45,6 +46,7 @@ class JobSubmitter:
         self.max_samples = max_samples
         self.split = split
         self.subset = subset
+        self.stream = stream
         self.config = get_config()
         self.logger = setup_logging("llmq.submit")
 
@@ -255,45 +257,55 @@ class JobSubmitter:
             # Wait for submission to complete
             await submit_task
 
-            # Start result consumer
-            result_task = asyncio.create_task(self._consume_results())
+            # Only handle results if streaming is enabled
+            if self.stream:
+                # Start result consumer
+                result_task = asyncio.create_task(self._consume_results())
 
-            # Initialize timeout tracking now that submission is complete
-            self.last_result_time = time.time()
+                # Initialize timeout tracking now that submission is complete
+                self.last_result_time = time.time()
 
-            # Wait for all pending results if we have any
-            if self.pending_jobs_count > 0 and not self.shutting_down:
-                initial_pending = self.pending_jobs_count
-                self.console.print(
-                    f"[blue]Waiting for {initial_pending} pending results...[/blue]"
-                )
-                self.console.print(
-                    f"[dim]Idle timeout: {self.timeout}s (resets when results arrive)[/dim]"
-                )
-
-                # Wait for all results with idle timeout (resets when results come in)
-                while self.pending_jobs_count > 0 and not self.shutting_down:
-                    time_since_last_result = time.time() - self.last_result_time
-
-                    if time_since_last_result >= self.timeout:
-                        self.console.print(
-                            f"[yellow]Idle timeout: No results received for {self.timeout}s. Exiting.[/yellow]"
-                        )
-                        break
-
-                    await asyncio.sleep(0.5)
-
-                if self.shutting_down:
+                # Wait for all pending results if we have any
+                if self.pending_jobs_count > 0 and not self.shutting_down:
+                    initial_pending = self.pending_jobs_count
                     self.console.print(
-                        f"[yellow]Force quit requested. Abandoning {self.pending_jobs_count} pending results.[/yellow]"
+                        f"[blue]Waiting for {initial_pending} pending results...[/blue]"
+                    )
+                    self.console.print(
+                        f"[dim]Idle timeout: {self.timeout}s (resets when results arrive)[/dim]"
                     )
 
-            # Cancel result consumer
-            result_task.cancel()
-            try:
-                await result_task
-            except asyncio.CancelledError:
-                pass
+                    # Wait for all results with idle timeout (resets when results come in)
+                    while self.pending_jobs_count > 0 and not self.shutting_down:
+                        time_since_last_result = time.time() - self.last_result_time
+
+                        if time_since_last_result >= self.timeout:
+                            self.console.print(
+                                f"[yellow]Idle timeout: No results received for {self.timeout}s. Exiting.[/yellow]"
+                            )
+                            break
+
+                        await asyncio.sleep(0.5)
+
+                    if self.shutting_down:
+                        self.console.print(
+                            f"[yellow]Force quit requested. Abandoning {self.pending_jobs_count} pending results.[/yellow]"
+                        )
+
+                # Cancel result consumer
+                result_task.cancel()
+                try:
+                    await result_task
+                except asyncio.CancelledError:
+                    pass
+            else:
+                # Non-streaming mode - just inform about submitted jobs
+                self.console.print(
+                    f"[green]Submitted {self.submitted_count} jobs to queue '{self.queue_name}'[/green]"
+                )
+                self.console.print(
+                    f"[blue]Use 'llmq receive {self.queue_name}' to get results[/blue]"
+                )
 
         except Exception as e:
             self.logger.error(f"Submit error: {e}", exc_info=True)
@@ -594,6 +606,7 @@ class PipelineSubmitter:
         max_samples: Optional[int] = None,
         split: str = "train",
         subset: Optional[str] = None,
+        stream: bool = False,
     ):
         self.pipeline_config = pipeline_config
         self.jobs_source = jobs_source
@@ -602,6 +615,7 @@ class PipelineSubmitter:
         self.max_samples = max_samples
         self.split = split
         self.subset = subset
+        self.stream = stream
         self.config = get_config()
         self.logger = setup_logging("llmq.pipeline")
 
@@ -662,7 +676,7 @@ class PipelineSubmitter:
                 f"[blue]Setting up pipeline: {self.pipeline_config.name}[/blue]"
             )
             stage_names = [stage.name for stage in self.pipeline_config.stages]
-            infrastructure, pipeline_exchange = (
+            stage_queues, final_results_queue = (
                 await self.broker.setup_pipeline_infrastructure(
                     self.pipeline_config.name, stage_names
                 )
@@ -693,60 +707,74 @@ class PipelineSubmitter:
                 self.max_samples,
                 self.split,
                 self.subset,
+                False,  # Never stream from pipeline submission - only final results
             )
             first_stage_submitter.broker = self.broker  # Reuse our broker connection
 
             # Submit jobs to first stage
             await first_stage_submitter._submit_jobs()
 
-            # Monitor final stage results
-            final_stage = self.pipeline_config.stages[-1]
-            final_stage_queue = self.pipeline_config.get_stage_queue_name(
-                final_stage.name
-            )
+            # Monitor final pipeline results if streaming enabled
+            if self.stream:
+                final_results_queue_name = (
+                    self.pipeline_config.get_pipeline_results_queue_name()
+                )
 
-            self.console.print(
-                f"[blue]Monitoring results from final stage: {final_stage.name}[/blue]"
-            )
+                self.console.print(
+                    f"[blue]Monitoring pipeline results from: {final_results_queue_name}[/blue]"
+                )
 
-            # Set up result monitoring
-            result_task = asyncio.create_task(
-                self._consume_final_results(final_stage_queue)
-            )
+                # Set up result monitoring
+                result_task = asyncio.create_task(
+                    self._consume_final_results(final_results_queue_name)
+                )
 
             # Update tracking from first stage submitter
             self.submitted_count = first_stage_submitter.submitted_count
             self.pending_jobs_count = first_stage_submitter.pending_jobs_count
             self.start_time = first_stage_submitter.start_time
-            self.last_result_time = time.time()
 
-            # Wait for pipeline completion
-            if self.pending_jobs_count > 0 and not self.shutting_down:
-                self.console.print(
-                    f"[blue]Pipeline processing {self.pending_jobs_count} jobs through {len(stage_names)} stages...[/blue]"
+            if self.stream:
+                self.last_result_time = time.time()
+
+                # Wait for pipeline completion if streaming
+                if self.pending_jobs_count > 0 and not self.shutting_down:
+                    self.console.print(
+                        f"[blue]Pipeline processing {self.pending_jobs_count} jobs through {len(stage_names)} stages...[/blue]"
+                    )
+                    self.console.print(
+                        f"[dim]Idle timeout: {self.timeout}s (resets when results arrive)[/dim]"
+                    )
+
+                    # Wait for all results with idle timeout
+                    while self.pending_jobs_count > 0 and not self.shutting_down:
+                        time_since_last_result = time.time() - self.last_result_time
+
+                        if time_since_last_result >= self.timeout:
+                            self.console.print(
+                                f"[yellow]Idle timeout: No results received for {self.timeout}s. Exiting.[/yellow]"
+                            )
+                            break
+
+                        await asyncio.sleep(0.5)
+
+                # Cancel result consumer
+                result_task.cancel()
+                try:
+                    await result_task
+                except asyncio.CancelledError:
+                    pass
+            else:
+                # Non-streaming mode - just inform about submitted jobs
+                pipeline_results_queue = (
+                    self.pipeline_config.get_pipeline_results_queue_name()
                 )
                 self.console.print(
-                    f"[dim]Idle timeout: {self.timeout}s (resets when results arrive)[/dim]"
+                    f"[green]Submitted {self.submitted_count} jobs to pipeline '{self.pipeline_config.name}'[/green]"
                 )
-
-                # Wait for all results with idle timeout
-                while self.pending_jobs_count > 0 and not self.shutting_down:
-                    time_since_last_result = time.time() - self.last_result_time
-
-                    if time_since_last_result >= self.timeout:
-                        self.console.print(
-                            f"[yellow]Idle timeout: No results received for {self.timeout}s. Exiting.[/yellow]"
-                        )
-                        break
-
-                    await asyncio.sleep(0.5)
-
-            # Cancel result consumer
-            result_task.cancel()
-            try:
-                await result_task
-            except asyncio.CancelledError:
-                pass
+                self.console.print(
+                    f"[blue]Use 'llmq receive {pipeline_results_queue}' to get results[/blue]"
+                )
 
         except Exception as e:
             self.logger.error(f"Pipeline error: {e}", exc_info=True)
@@ -816,10 +844,18 @@ def run_submit(
     max_samples: Optional[int] = None,
     split: str = "train",
     subset: Optional[str] = None,
+    stream: bool = False,
 ):
     """Run the job submission process."""
     submitter = JobSubmitter(
-        queue_name, jobs_source, timeout, column_mapping, max_samples, split, subset
+        queue_name,
+        jobs_source,
+        timeout,
+        column_mapping,
+        max_samples,
+        split,
+        subset,
+        stream,
     )
 
     try:
@@ -836,6 +872,7 @@ def run_pipeline_submit(
     max_samples: Optional[int] = None,
     split: str = "train",
     subset: Optional[str] = None,
+    stream: bool = False,
 ):
     """Run the pipeline submission process."""
     try:
@@ -850,6 +887,7 @@ def run_pipeline_submit(
             max_samples,
             split,
             subset,
+            stream,
         )
 
         asyncio.run(submitter.run())
