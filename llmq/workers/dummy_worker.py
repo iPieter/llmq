@@ -16,8 +16,16 @@ class DummyWorker(BaseWorker):
         concurrency: Optional[int] = None,
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
+        pipeline_stages: Optional[list[str]] = None,
     ):
-        super().__init__(queue_name, worker_id, concurrency, pipeline_name, stage_name)
+        super().__init__(
+            queue_name,
+            worker_id,
+            concurrency,
+            pipeline_name,
+            stage_name,
+            pipeline_stages,
+        )
 
     def _generate_worker_id(self) -> str:
         """Generate unique dummy worker ID."""
@@ -54,8 +62,11 @@ class FilterWorker(BaseWorker):
         worker_id: Optional[str] = None,
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
+        pipeline_stages: Optional[list[str]] = None,
     ):
-        super().__init__(queue_name, worker_id, None, pipeline_name, stage_name)
+        super().__init__(
+            queue_name, worker_id, None, pipeline_name, stage_name, pipeline_stages
+        )
         self.filter_field = filter_field
         self.filter_value = filter_value
 

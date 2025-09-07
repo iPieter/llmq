@@ -134,6 +134,9 @@ def run_pipeline_worker(
         # Get queue name for this stage
         queue_name = pipeline_config.get_stage_queue_name(stage_name)
 
+        # Get ordered list of stage names for routing
+        pipeline_stages = [s.name for s in pipeline_config.stages]
+
         console.print(
             f"[blue]Starting {stage.worker} worker for pipeline stage '{stage_name}'[/blue]"
         )
@@ -164,6 +167,7 @@ def run_pipeline_worker(
                 concurrency=concurrency,
                 pipeline_name=pipeline_config.name,
                 stage_name=stage_name,
+                pipeline_stages=pipeline_stages,
             )
 
         elif stage.worker == "dummy":
@@ -175,6 +179,7 @@ def run_pipeline_worker(
                 concurrency=concurrency,
                 pipeline_name=pipeline_config.name,
                 stage_name=stage_name,
+                pipeline_stages=pipeline_stages,
             )
 
         elif stage.worker == "filter":
@@ -201,6 +206,7 @@ def run_pipeline_worker(
                 filter_value,
                 pipeline_name=pipeline_config.name,
                 stage_name=stage_name,
+                pipeline_stages=pipeline_stages,
             )
 
         else:
