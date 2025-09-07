@@ -4,7 +4,6 @@ import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Optional
-from aio_pika.abc import AbstractExchange
 
 from aio_pika.abc import AbstractIncomingMessage
 
@@ -23,6 +22,7 @@ class BaseWorker(ABC):
         concurrency: Optional[int] = None,
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
+        pipeline_stages: Optional[list[str]] = None,
     ):
         self.queue_name = queue_name
         self.worker_id = worker_id or self._generate_worker_id()
@@ -32,6 +32,7 @@ class BaseWorker(ABC):
         # Pipeline configuration
         self.pipeline_name = pipeline_name
         self.stage_name = stage_name
+        self.pipeline_stages = pipeline_stages
         self.is_pipeline_worker = pipeline_name is not None and stage_name is not None
 
         # Set up structured logging for workers
@@ -40,8 +41,6 @@ class BaseWorker(ABC):
         self.logger = setup_logging(f"llmq.worker.{self.worker_id}", structured=True)
 
         self.broker: Optional[BrokerManager] = None
-        self.results_exchange: Optional[AbstractExchange] = None
-        self.pipeline_exchange: Optional[AbstractExchange] = None
         self.running = False
         self.jobs_processed = 0
         self.total_duration_ms = 0.0
@@ -98,31 +97,17 @@ class BaseWorker(ABC):
 
         # Set up queue infrastructure
         if self.is_pipeline_worker:
-            # Pipeline worker: connect to existing pipeline infrastructure
-            from aio_pika import ExchangeType
-
-            if self.broker.channel is None:
-                raise RuntimeError("Broker channel not initialized")
-
-            self.pipeline_exchange = await self.broker.channel.declare_exchange(
-                f"pipeline.{self.pipeline_name}.routing",
-                ExchangeType.TOPIC,
-                durable=True,
-            )
-
-            # Also set up regular results exchange for monitoring/debugging
-            _, self.results_exchange = await self.broker.setup_queue_infrastructure(
-                self.queue_name
-            )
+            # Pipeline worker: need to know stage order for routing
+            # For now, we'll get this from pipeline config when needed
+            # Set up queue infrastructure for this stage
+            await self.broker.setup_queue_infrastructure(self.queue_name)
 
             self.logger.info(
                 f"Connected to pipeline {self.pipeline_name}, stage {self.stage_name}"
             )
         else:
             # Regular worker: set up standard infrastructure
-            _, self.results_exchange = await self.broker.setup_queue_infrastructure(
-                self.queue_name
-            )
+            await self.broker.setup_queue_infrastructure(self.queue_name)
 
         self.logger.info("Worker initialization complete")
 
@@ -202,25 +187,26 @@ class BaseWorker(ABC):
 
             # Publish result
             if self.broker is not None:
-                if self.is_pipeline_worker and self.pipeline_exchange is not None:
-                    # Pipeline worker: route result to next stage
+                if self.is_pipeline_worker:
+                    # Pipeline worker: route result to next stage or final results
                     if self.pipeline_name is None or self.stage_name is None:
                         raise RuntimeError(
                             "Pipeline worker missing pipeline_name or stage_name"
                         )
 
+                    # Get pipeline stages if not already loaded
+                    if self.pipeline_stages is None:
+                        self.pipeline_stages = await self._get_pipeline_stages()
+
                     await self.broker.publish_pipeline_result(
-                        self.pipeline_exchange,
-                        result,
                         self.pipeline_name,
                         self.stage_name,
+                        self.pipeline_stages,
+                        result,
                     )
-                    # Also publish to regular results exchange for monitoring
-                    if self.results_exchange is not None:
-                        await self.broker.publish_result(self.results_exchange, result)
-                elif self.results_exchange is not None:
-                    # Regular worker: publish normally
-                    await self.broker.publish_result(self.results_exchange, result)
+                else:
+                    # Regular worker: publish to results queue
+                    await self.broker.publish_result(self.queue_name, result)
 
             # Acknowledge message
             await message.ack()
@@ -257,6 +243,21 @@ class BaseWorker(ABC):
 
             # Reject message (will be requeued for retry)
             await message.reject(requeue=True)
+
+    async def _get_pipeline_stages(self) -> list[str]:
+        """Get the ordered list of stages for this pipeline."""
+        if self.pipeline_stages is not None:
+            return self.pipeline_stages
+
+        # Fallback - this shouldn't happen in normal operation
+        if self.pipeline_name is None:
+            raise RuntimeError("Pipeline name not set")
+
+        # For now, we'll need to infer this from the queue name pattern
+        # In a more sophisticated implementation, this could be stored in Redis/etc
+        # For testing purposes, we'll assume a simple pattern
+        # This method should be overridden by pipeline-aware workers
+        return [self.stage_name] if self.stage_name else []
 
     async def cleanup(self) -> None:
         """Clean up resources."""
