@@ -81,21 +81,36 @@ docker run -d --name rabbitmq \
 # Start a worker
 llmq worker run Unbabel/Tower-Plus-9B translation-queue
 
-# Submit jobs (in another terminal)
+# Submit jobs (in another terminal) 
 echo '{"id": "hello", "messages": [{"role": "user", "content": "Translate the following German source text to English:\\nGerman: Ich  bin eine Giraffe.\\nEnglish: "}]}' \
     | llmq submit translation-queue -
 
-# Results stream back immediately
-{"id": "hello", "result": "I am a giraffe.", "worker_id": "worker-gpu0", "duration_ms": 45.2}
+# Receive results (separate command for resumable downloads)
+llmq receive translation-queue > results.jsonl
+
+# Or use streaming mode (backwards compatible)
+echo '{"id": "hello", "messages": [{"role": "user", "content": "Translate the following German source text to English:\\nGerman: Ich  bin eine Giraffe.\\nEnglish: "}]}' \
+    | llmq submit translation-queue - --stream > results.jsonl
 ```
 
 ## How It Works
 
-Similar to OpenAI's Batch API, llmq separates job submission from processing:
+llmq now provides two modes for handling jobs and results:
 
+### Separate Submit/Receive (Default)
 1. **Submit jobs** - Upload thousands of inference requests to a queue
 2. **Workers process** - GPU-accelerated workers pull jobs and generate responses  
+3. **Receive results** - Download results separately with resumable queue-based retrieval
+
+### Streaming Mode (Backwards Compatible)  
+1. **Submit jobs** - Upload inference requests to a queue
+2. **Workers process** - GPU-accelerated workers pull jobs and generate responses
 3. **Stream results** - Get real-time results as jobs complete, with automatic timeout handling
+
+**Benefits of separate submit/receive:**
+- **Resumable downloads** - If your connection drops, you can resume receiving results
+- **Multiple consumers** - Different processes can consume from the same results queue
+- **Better for large batches** - Submit thousands of jobs, then receive results at your own pace
 
 ## Use Cases
 
@@ -111,8 +126,14 @@ llmq worker run Unbabel/Tower-Plus-9B translation-queue
 {"id": "job1", "messages": [{"role": "user", "content": "Translate to Spanish: {text}"}], "text": "Hello world"}
 {"id": "job2", "messages": [{"role": "user", "content": "Translate to French: {text}"}], "text": "Good morning"}
 
-# Process jobs
-llmq submit translation-queue jobs.jsonl > results.jsonl
+# Submit jobs
+llmq submit translation-queue jobs.jsonl
+
+# Receive results separately (resumable) 
+llmq receive translation-queue > results.jsonl
+
+# Or combine both (backwards compatible)
+llmq submit translation-queue jobs.jsonl --stream > results.jsonl
 ```
 
 ### Data Cleaning at Scale
@@ -126,7 +147,10 @@ llmq worker run meta-llama/Llama-3.2-3B-Instruct cleaning-queue
 # Submit HuggingFace dataset directly
 llmq submit cleaning-queue HuggingFaceFW/fineweb \
   --map 'messages=[{"role": "user", "content": "Clean this text: {text}"}]' \
-  --max-samples 10000 > cleaned_data.jsonl
+  --max-samples 10000
+
+# Receive cleaned results
+llmq receive cleaning-queue > cleaned_data.jsonl
 ```
 
 ### RL Training Rollouts
@@ -165,6 +189,12 @@ All workers support the same configuration options and can be scaled horizontall
 # Submit jobs from file or stdin
 llmq submit <queue-name> <jobs.jsonl>
 llmq submit <queue-name> -  # from stdin
+
+# Receive results (resumable)
+llmq receive <queue-name> > results.jsonl
+
+# Stream results (backwards compatible)
+llmq submit <queue-name> <jobs.jsonl> --stream > results.jsonl
 
 # Monitor progress
 llmq status <queue-name>
@@ -259,10 +289,14 @@ Both formats support template substitution with `{variable}` syntax.
 ## Architecture
 
 llmq creates two components per queue:
-- **Job Queue**: `<queue-name>` - Where jobs are submitted
-- **Results Exchange**: `<queue-name>.results` - Streams results back
+- **Job Queue**: `<queue-name>` - Where jobs are submitted  
+- **Results Queue**: `<queue-name>.results` - Where results are stored (durable for resumability)
 
-Workers use vLLM for GPU acceleration and RabbitMQ for reliable job distribution. Results stream back in real-time as jobs complete.
+**Pipeline Architecture:**
+- **Stage Queues**: `pipeline.<name>.<stage>` - Individual pipeline stages
+- **Final Results Queue**: `pipeline.<name>.results` - Final pipeline output
+
+Workers use vLLM for GPU acceleration and RabbitMQ for reliable job distribution. The queue-based results system enables resumable downloads and better fault tolerance.
 
 ## Performance Tips
 
