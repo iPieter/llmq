@@ -21,11 +21,19 @@ class VLLMWorker(BaseWorker):
         concurrency: Optional[int] = None,
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
+        pipeline_stages: Optional[list[str]] = None,
     ):
         self.model_name = model_name
         self.tensor_parallel_size = tensor_parallel_size
         self.data_parallel_size = data_parallel_size
-        super().__init__(queue_name, worker_id, concurrency, pipeline_name, stage_name)
+        super().__init__(
+            queue_name,
+            worker_id,
+            concurrency,
+            pipeline_name,
+            stage_name,
+            pipeline_stages,
+        )
         self.engine: Optional[AsyncLLMEngine] = None
 
     def _generate_worker_id(self) -> str:
