@@ -88,26 +88,25 @@ class TestBrokerManager:
         broker.channel = mock_channel
 
         mock_job_queue = AsyncMock()
-        mock_results_exchange = AsyncMock()
+        mock_results_queue = AsyncMock()
 
         mock_channel.declare_queue.side_effect = [
             mock_job_queue,  # Job queue
+            mock_results_queue,  # Results queue
         ]
-        mock_channel.declare_exchange.return_value = mock_results_exchange
 
         # Call the method
         (
             job_queue,
-            results_exchange,
+            results_queue,
         ) = await broker.setup_queue_infrastructure("test-queue")
 
         # Verify results
         assert job_queue == mock_job_queue
-        assert results_exchange == mock_results_exchange
+        assert results_queue == mock_results_queue
 
         # Verify calls
-        assert mock_channel.declare_queue.call_count == 1
-        assert mock_channel.declare_exchange.call_count == 1
+        assert mock_channel.declare_queue.call_count == 2  # Both job and results queues
 
     @pytest.mark.unit
     async def test_publish_job(self, mock_config, sample_job):
@@ -135,16 +134,20 @@ class TestBrokerManager:
         """Test result publishing."""
         broker = BrokerManager(mock_config)
 
-        mock_results_exchange = AsyncMock()
+        # Mock channel and default exchange
+        mock_channel = AsyncMock()
+        mock_default_exchange = AsyncMock()
+        broker.channel = mock_channel
+        mock_channel.default_exchange = mock_default_exchange
 
-        await broker.publish_result(mock_results_exchange, sample_result)
+        await broker.publish_result("test-queue", sample_result)
 
-        mock_results_exchange.publish.assert_called_once()
-        args, kwargs = mock_results_exchange.publish.call_args
+        mock_default_exchange.publish.assert_called_once()
+        args, kwargs = mock_default_exchange.publish.call_args
         message = args[0]
 
         # Verify message properties
-        assert kwargs["routing_key"] == ""
+        assert kwargs["routing_key"] == "test-queue.results"
         assert message.message_id == sample_result.id
 
     @pytest.mark.unit
@@ -250,18 +253,19 @@ class TestBrokerManager:
         """Test result consumption setup."""
         broker = BrokerManager(mock_config)
 
-        # Mock channel and components
+        # Mock channel - needed for the RuntimeError check
         mock_channel = AsyncMock()
-        mock_results_queue = AsyncMock()
-        mock_results_exchange = AsyncMock()
-
-        mock_channel.declare_queue.return_value = mock_results_queue
-        mock_channel.declare_exchange.return_value = mock_results_exchange
         broker.channel = mock_channel
 
-        callback = AsyncMock()
-        result_queue = await broker.consume_results("test-queue", callback)
+        # Mock setup_queue_infrastructure
+        mock_job_queue = AsyncMock()
+        mock_results_queue = AsyncMock()
 
-        assert result_queue == mock_results_queue
-        mock_results_queue.bind.assert_called_once_with(mock_results_exchange)
-        mock_results_queue.consume.assert_called_once_with(callback)
+        with patch.object(broker, "setup_queue_infrastructure") as mock_setup:
+            mock_setup.return_value = (mock_job_queue, mock_results_queue)
+
+            callback = AsyncMock()
+            result_queue = await broker.consume_results("test-queue", callback)
+
+            assert result_queue == mock_results_queue
+            mock_results_queue.consume.assert_called_once_with(callback)
