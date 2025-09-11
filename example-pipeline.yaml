@@ -1,0 +1,24 @@
+name: translation-pipeline
+stages:
+  - name: deduplication
+    worker: semhash
+    config:
+      batch_size: 500
+      mode: "deduplicate"
+  - name: translation
+    worker: vllm
+    config:
+      model: "Unbabel/Tower-Plus-9B"
+      messages:
+        - role: "user"
+          content: "Translate the following text to English:\n\n{source_text}\n\nTranslation:"
+  - name: formatting
+    worker: vllm
+    config:
+      model: "google/gemma-2-9b-it"
+      messages:
+        - role: "user"
+          content: "Clean up and format the following translated text with proper markdown formatting. Keep the meaning intact but improve readability:\n\n{translated_text}"
+config:
+  timeout_minutes: 120
+  retry_count: 2
