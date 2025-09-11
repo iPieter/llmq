@@ -84,6 +84,49 @@ def run_dummy_worker(queue_name: str, concurrency: Optional[int] = None):
         sys.exit(1)
 
 
+def run_semhash_worker(
+    queue_name: str,
+    batch_size: int = 1000,
+    mode: str = "deduplicate",
+    concurrency: Optional[int] = None,
+):
+    """Run SemHash worker for semantic deduplication."""
+    console = Console()
+
+    try:
+        # Lazy import
+        from llmq.workers.semhash_worker import SemHashWorker
+
+        console.print(f"[blue]Starting SemHash worker for queue '{queue_name}'[/blue]")
+        console.print(f"[dim]Mode: {mode}[/dim]")
+        console.print(f"[dim]Batch size: {batch_size}[/dim]")
+
+        if concurrency:
+            console.print(f"[dim]Concurrency set to {concurrency} jobs at a time[/dim]")
+
+        worker = SemHashWorker(
+            queue_name,
+            concurrency=concurrency,
+            batch_size=batch_size,
+            mode=mode,
+        )
+        asyncio.run(worker.run())
+
+    except ImportError as e:
+        console.print(
+            "[red]SemHash not installed. Install with: pip install semhash[/red]"
+        )
+        console.print(f"[dim]Error: {e}[/dim]")
+        sys.exit(1)
+    except KeyboardInterrupt:
+        console.print("\n[yellow]SemHash worker stopped by user[/yellow]")
+    except Exception as e:
+        logger = setup_logging("llmq.cli.worker")
+        logger.error(f"SemHash worker error: {e}", exc_info=True)
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+
 def run_filter_worker(queue_name: str, filter_field: str, filter_value: str):
     """Run filter worker for simple job filtering."""
     console = Console()
@@ -144,7 +187,9 @@ def run_pipeline_worker(
         console.print(f"[dim]Queue: {queue_name}[/dim]")
 
         # Launch appropriate worker type
-        worker: Optional[Union["VLLMWorker", "DummyWorker", "FilterWorker"]] = None
+        worker: Optional[
+            Union["VLLMWorker", "DummyWorker", "FilterWorker", "SemHashWorker"]
+        ] = None
         if stage.worker == "vllm":
             # Need model name from stage config
             if stage.config is None:
@@ -182,6 +227,28 @@ def run_pipeline_worker(
                 pipeline_stages=pipeline_stages,
             )
 
+        elif stage.worker == "semhash":
+            # Import and create SemHash worker
+            from llmq.workers.semhash_worker import SemHashWorker
+
+            # Get SemHash config or use defaults
+            batch_size = 1000
+            mode = "deduplicate"
+
+            if stage.config:
+                batch_size = stage.config.get("batch_size", batch_size)
+                mode = stage.config.get("mode", mode)
+
+            worker = SemHashWorker(
+                queue_name,
+                concurrency=concurrency,
+                pipeline_name=pipeline_config.name,
+                stage_name=stage_name,
+                pipeline_stages=pipeline_stages,
+                batch_size=batch_size,
+                mode=mode,
+            )
+
         elif stage.worker == "filter":
             # Need filter config
             if stage.config is None:
@@ -212,7 +279,7 @@ def run_pipeline_worker(
         else:
             console.print(f"[red]Unknown worker type: {stage.worker}[/red]")
             console.print(
-                "[yellow]Supported worker types: vllm, dummy, filter[/yellow]"
+                "[yellow]Supported worker types: vllm, dummy, semhash, filter[/yellow]"
             )
             sys.exit(1)
 

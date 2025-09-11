@@ -337,6 +337,45 @@ def worker_dummy(queue_name: str, concurrency: int):
     run_dummy_worker(queue_name, concurrency)
 
 
+@worker.command("semhash")
+@click.argument("queue_name")
+@click.option(
+    "--batch-size",
+    default=1000,
+    type=int,
+    help="Batch size for processing texts together",
+)
+@click.option(
+    "--mode",
+    default="deduplicate",
+    type=click.Choice(["deduplicate", "filter_outliers", "find_representative"]),
+    help="SemHash processing mode",
+)
+@click.option(
+    "--concurrency",
+    "-c",
+    default=None,
+    type=int,
+    help="Number of jobs to process concurrently",
+)
+def worker_semhash(
+    queue_name: str,
+    batch_size: int,
+    mode: str,
+    concurrency: int,
+):
+    """Run SemHash worker for semantic deduplication and filtering
+
+    Modes:
+    - deduplicate: Remove semantically similar texts
+    - filter_outliers: Remove outlier texts
+    - find_representative: Keep only representative texts
+    """
+    from llmq.cli.worker import run_semhash_worker
+
+    run_semhash_worker(queue_name, batch_size, mode, concurrency)
+
+
 @worker.command("filter")
 @click.argument("queue_name")
 @click.argument("filter_field")
