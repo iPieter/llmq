@@ -1,6 +1,8 @@
 import random
 from typing import Optional, List
 
+from semhash import SemHash  # type: ignore
+
 from llmq.core.models import Job
 from llmq.workers.base import BaseWorker
 
@@ -39,19 +41,10 @@ class SemHashWorker(BaseWorker):
 
     async def _initialize_processor(self) -> None:
         """Initialize SemHash processor."""
-        try:
-            import semhash  # noqa: F401
-
-            self.logger.info(
-                f"Initializing SemHash processor with mode '{self.mode}', "
-                f"batch size {self.batch_size}"
-            )
-
-        except ImportError:
-            self.logger.error(
-                "SemHash not installed. Install with: pip install semhash"
-            )
-            raise
+        self.logger.info(
+            f"Initializing SemHash processor with mode '{self.mode}', "
+            f"batch size {self.batch_size}"
+        )
 
     async def _process_job(self, job: Job) -> str:
         """Process job using SemHash batch processing."""
@@ -75,7 +68,6 @@ class SemHashWorker(BaseWorker):
     async def _process_single_item(self, text_content: str, job: Job) -> str:
         """Process a single item for immediate response."""
         try:
-            from semhash import SemHash
 
             SemHash.from_records([text_content])
 
@@ -100,7 +92,6 @@ class SemHashWorker(BaseWorker):
             return "No items in batch"
 
         try:
-            from semhash import SemHash
 
             self.logger.info(
                 f"Processing batch of {len(self.text_batch)} items with mode '{self.mode}'"
