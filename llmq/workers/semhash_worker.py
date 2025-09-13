@@ -83,7 +83,9 @@ class SemHashWorker(BaseWorker):
                 elif self.mode == "filter_outliers":
                     return f"ACCEPTED: Single item processed (mode: {self.mode})"
                 elif self.mode == "find_representative":
-                    return f"ACCEPTED: Single item is representative (mode: {self.mode})"
+                    return (
+                        f"ACCEPTED: Single item is representative (mode: {self.mode})"
+                    )
                 return f"ACCEPTED: Single item processed (mode: {self.mode})"
 
         except Exception as e:

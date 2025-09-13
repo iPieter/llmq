@@ -24,6 +24,7 @@ from llmq.core.pipeline import PipelineConfig
 from llmq.utils.logging import setup_logging
 from llmq.utils.template import create_job_from_data, ensure_job_has_prompt_or_messages
 
+
 class JobSubmitter:
     """Handles job submission and result streaming."""
 
@@ -159,7 +160,6 @@ class JobSubmitter:
         job_data = ensure_job_has_prompt_or_messages(job_data, item)
 
         return Job(**job_data)
-
 
     def _signal_handler(self, signum: int, frame: Any) -> None:
         """Handle Ctrl+C gracefully - stop submitting, wait for pending results."""

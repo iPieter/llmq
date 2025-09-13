@@ -176,19 +176,26 @@ class BrokerManager:
             # Convert result to next stage job, preserving all metadata
             result_dict = result.model_dump()
             extra_fields = {}
-            
+
             # Extract all fields except the core Result fields
-            core_result_fields = {"id", "prompt", "result", "worker_id", "duration_ms", "timestamp"}
+            core_result_fields = {
+                "id",
+                "prompt",
+                "result",
+                "worker_id",
+                "duration_ms",
+                "timestamp",
+            }
             for key, value in result_dict.items():
                 if key not in core_result_fields:
                     extra_fields[key] = value
-            
+
             # For pipeline stages, we need to add the result as a field for template substitution
             stage_result_key = f"{stage_name}_result"
             extra_fields[stage_result_key] = result.result
-            
+
             next_job = Job(
-                id=result.id,  # Keep same ID for tracking  
+                id=result.id,  # Keep same ID for tracking
                 **extra_fields,
             )
 
@@ -221,7 +228,7 @@ class BrokerManager:
 
         # For pipeline results queues, consume directly from the specified queue
         # For regular job queues, use the .results suffix pattern
-        if queue_name.endswith('.results'):
+        if queue_name.endswith(".results"):
             # Direct results queue (e.g., pipeline.name.results)
             results_queue = await self.channel.declare_queue(queue_name, durable=True)
         else:

@@ -173,11 +173,15 @@ class VLLMWorker(BaseWorker):
             # Pipeline mode: use template messages from stage config
             job_data = job.model_dump()
             template_messages = self.stage_config["messages"]
-            resolved_messages = self._resolve_template_messages(template_messages, job_data)
-            
+            resolved_messages = self._resolve_template_messages(
+                template_messages, job_data
+            )
+
             # Use tokenizer to format chat template
             prompt = tokenizer.apply_chat_template(  # type: ignore
-                conversation=resolved_messages, tokenize=False, add_generation_prompt=True
+                conversation=resolved_messages,
+                tokenize=False,
+                add_generation_prompt=True,
             )
         elif job.chat_mode or job.messages:
             if not job.messages:
@@ -206,9 +210,12 @@ class VLLMWorker(BaseWorker):
 
         return generated_text
 
-    def _resolve_template_messages(self, template_messages: list, job_data: dict) -> list:
+    def _resolve_template_messages(
+        self, template_messages: list, job_data: dict
+    ) -> list:
         """Resolve template variables in messages using job data."""
         from llmq.utils.template import resolve_template_messages
+
         return resolve_template_messages(template_messages, job_data)
 
     async def _cleanup_processor(self) -> None:
