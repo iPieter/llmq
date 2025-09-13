@@ -7,9 +7,8 @@ from aio_pika.abc import (
     AbstractConnection,
     AbstractChannel,
     AbstractQueue,
-    AbstractExchange,
 )
-from aio_pika import ExchangeType, DeliveryMode
+from aio_pika import DeliveryMode
 import httpx
 
 from llmq.core.config import get_config
@@ -57,12 +56,12 @@ class BrokerManager:
 
     async def setup_queue_infrastructure(
         self, queue_name: str
-    ) -> tuple[AbstractQueue, AbstractExchange]:
+    ) -> tuple[AbstractQueue, AbstractQueue]:
         """
         Set up queue infrastructure for a given queue name.
 
         Returns:
-            Tuple of (job_queue, results_exchange)
+            Tuple of (job_queue, results_queue)
         """
         if not self.channel:
             raise RuntimeError("Not connected to RabbitMQ")
@@ -73,13 +72,45 @@ class BrokerManager:
             durable=True,
         )
 
-        # Set up results exchange (fanout for multiple consumers)
-        results_exchange = await self.channel.declare_exchange(
-            f"{queue_name}.results", ExchangeType.FANOUT, durable=True
+        # Set up results queue (durable for resumable downloads)
+        results_queue = await self.channel.declare_queue(
+            f"{queue_name}.results", durable=True
         )
 
         self.logger.info(f"Queue infrastructure set up for {queue_name}")
-        return job_queue, results_exchange
+        return job_queue, results_queue
+
+    async def setup_pipeline_infrastructure(
+        self, pipeline_name: str, stages: list[str]
+    ) -> tuple[dict[str, AbstractQueue], AbstractQueue]:
+        """
+        Set up pipeline infrastructure with direct queue routing.
+
+        Returns:
+            Tuple of (stage_queues_dict, final_results_queue) where stage_queues_dict
+            maps stage names to job queues, and final_results_queue is for final output
+        """
+        if not self.channel:
+            raise RuntimeError("Not connected to RabbitMQ")
+
+        stage_queues = {}
+
+        # Set up stage queues
+        for stage in stages:
+            stage_queue_name = f"pipeline.{pipeline_name}.{stage}"
+            job_queue = await self.channel.declare_queue(
+                stage_queue_name,
+                durable=True,
+            )
+            stage_queues[stage] = job_queue
+
+        # Set up final results queue (only one for the entire pipeline)
+        final_results_queue = await self.channel.declare_queue(
+            f"pipeline.{pipeline_name}.results", durable=True
+        )
+
+        self.logger.info(f"Pipeline infrastructure set up for {pipeline_name}")
+        return stage_queues, final_results_queue
 
     async def publish_job(self, queue_name: str, job: Job) -> None:
         """Publish a job to the specified queue."""
@@ -94,17 +125,90 @@ class BrokerManager:
 
         await self.channel.default_exchange.publish(message, routing_key=queue_name)
 
-    async def publish_result(
-        self, results_exchange: AbstractExchange, result: Result
-    ) -> None:
-        """Publish a result to the results exchange."""
+    async def publish_result(self, queue_name: str, result: Result) -> None:
+        """Publish a result to the results queue."""
+        if not self.channel:
+            raise RuntimeError("Not connected to RabbitMQ")
+
         message = aio_pika.Message(
             result.model_dump_json().encode(),
             delivery_mode=DeliveryMode.PERSISTENT,
             message_id=result.id,
         )
 
-        await results_exchange.publish(message, routing_key="")
+        # Publish directly to results queue
+        results_queue_name = f"{queue_name}.results"
+        await self.channel.default_exchange.publish(
+            message, routing_key=results_queue_name
+        )
+
+    async def publish_pipeline_result(
+        self,
+        pipeline_name: str,
+        stage_name: str,
+        stages: list[str],
+        result: Result,
+    ) -> None:
+        """Publish a pipeline result - either to next stage or final results."""
+        if not self.channel:
+            raise RuntimeError("Not connected to RabbitMQ")
+
+        # Find current stage index
+        current_stage_idx = stages.index(stage_name)
+
+        if current_stage_idx == len(stages) - 1:
+            # This is the final stage - publish to pipeline results queue
+            results_queue_name = f"pipeline.{pipeline_name}.results"
+            message = aio_pika.Message(
+                result.model_dump_json().encode(),
+                delivery_mode=DeliveryMode.PERSISTENT,
+                message_id=result.id,
+            )
+            await self.channel.default_exchange.publish(
+                message, routing_key=results_queue_name
+            )
+            self.logger.info(f"Pipeline final result: {stage_name} -> results queue")
+        else:
+            # Route to next stage as a job
+            next_stage = stages[current_stage_idx + 1]
+            next_stage_queue = f"pipeline.{pipeline_name}.{next_stage}"
+
+            # Convert result to next stage job, preserving all metadata
+            result_dict = result.model_dump()
+            extra_fields = {}
+
+            # Extract all fields except the core Result fields
+            core_result_fields = {
+                "id",
+                "prompt",
+                "result",
+                "worker_id",
+                "duration_ms",
+                "timestamp",
+            }
+            for key, value in result_dict.items():
+                if key not in core_result_fields:
+                    extra_fields[key] = value
+
+            # For pipeline stages, we need to add the result as a field for template substitution
+            stage_result_key = f"{stage_name}_result"
+            extra_fields[stage_result_key] = result.result
+
+            next_job = Job(
+                id=result.id,  # Keep same ID for tracking
+                **extra_fields,
+            )
+
+            message = aio_pika.Message(
+                next_job.model_dump_json().encode(),
+                delivery_mode=DeliveryMode.PERSISTENT,
+                message_id=result.id,
+            )
+
+            await self.channel.default_exchange.publish(
+                message, routing_key=next_stage_queue
+            )
+            self.logger.info(f"Pipeline result routed: {stage_name} -> {next_stage}")
 
     async def consume_jobs(self, queue_name: str, callback: Callable) -> AbstractQueue:
         """Set up job consumption with the provided callback."""
@@ -122,17 +226,15 @@ class BrokerManager:
         if not self.channel:
             raise RuntimeError("Not connected to RabbitMQ")
 
-        # Create a temporary exclusive queue for this consumer
-        results_queue = await self.channel.declare_queue(
-            exclusive=True, auto_delete=True
-        )
+        # For pipeline results queues, consume directly from the specified queue
+        # For regular job queues, use the .results suffix pattern
+        if queue_name.endswith(".results"):
+            # Direct results queue (e.g., pipeline.name.results)
+            results_queue = await self.channel.declare_queue(queue_name, durable=True)
+        else:
+            # Regular job queue pattern (queue_name -> queue_name.results)
+            _, results_queue = await self.setup_queue_infrastructure(queue_name)
 
-        # Bind to the results exchange
-        results_exchange = await self.channel.declare_exchange(
-            f"{queue_name}.results", ExchangeType.FANOUT, durable=True
-        )
-
-        await results_queue.bind(results_exchange)
         await results_queue.consume(callback)
         return results_queue
 
