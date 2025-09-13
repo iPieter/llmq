@@ -152,6 +152,7 @@ class JobSubmitter:
         # Create job using template utilities
         job_data = create_job_from_data(item, index, self.column_mapping, "dataset")
 
+
         # If no mapping provided and 'text' column exists, use it as prompt
         if not self.column_mapping and "text" in item:
             job_data["prompt"] = str(item["text"])
