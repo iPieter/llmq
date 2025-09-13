@@ -79,20 +79,28 @@ class SemHashWorker(BaseWorker):
 
             SemHash.from_records([text_content])
 
-            if self.mode == "deduplicate":
+            # In pipeline mode, return the text content to pass to next stage
+            # In standalone mode, return status messages
+            if self.is_pipeline_worker:
+                # For deduplication, pass through the text content
+                return text_content
+            else:
+                # Standalone mode - return status messages
+                if self.mode == "deduplicate":
+                    return f"ACCEPTED: Single item processed (mode: {self.mode})"
+                elif self.mode == "filter_outliers":
+                    return f"ACCEPTED: Single item processed (mode: {self.mode})"
+                elif self.mode == "find_representative":
+                    return f"ACCEPTED: Single item is representative (mode: {self.mode})"
                 return f"ACCEPTED: Single item processed (mode: {self.mode})"
-
-            elif self.mode == "filter_outliers":
-                return f"ACCEPTED: Single item processed (mode: {self.mode})"
-
-            elif self.mode == "find_representative":
-                return f"ACCEPTED: Single item is representative (mode: {self.mode})"
-
-            return f"ACCEPTED: Single item processed (mode: {self.mode})"
 
         except Exception as e:
             self.logger.error(f"SemHash processing error: {e}")
-            return f"ACCEPTED: Processing fallback (error: {e})"
+            if self.is_pipeline_worker:
+                # In pipeline mode, still pass through on error but log it
+                return text_content
+            else:
+                return f"ACCEPTED: Processing fallback (error: {e})"
 
     async def _process_batch(self) -> str:
         """Process accumulated batch using SemHash."""

@@ -18,7 +18,7 @@ stages:
       model: "google/gemma-2-9b-it"
       messages:
         - role: "user"
-          content: "Clean up and format the following translated text with proper markdown formatting. Keep the meaning intact but improve readability:\n\n{translated_text}"
+          content: "Clean up and format the following translated text with proper markdown formatting. Keep the meaning intact but improve readability:\n\n{translation_result}"
 config:
   timeout_minutes: 120
   retry_count: 2

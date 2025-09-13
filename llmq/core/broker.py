@@ -173,11 +173,22 @@ class BrokerManager:
             next_stage = stages[current_stage_idx + 1]
             next_stage_queue = f"pipeline.{pipeline_name}.{next_stage}"
 
-            # Convert result to next stage job, preserving metadata
-            extra_fields = result.model_extra if result.model_extra else {}
+            # Convert result to next stage job, preserving all metadata
+            result_dict = result.model_dump()
+            extra_fields = {}
+            
+            # Extract all fields except the core Result fields
+            core_result_fields = {"id", "prompt", "result", "worker_id", "duration_ms", "timestamp"}
+            for key, value in result_dict.items():
+                if key not in core_result_fields:
+                    extra_fields[key] = value
+            
+            # For pipeline stages, we need to add the result as a field for template substitution
+            stage_result_key = f"{stage_name}_result"
+            extra_fields[stage_result_key] = result.result
+            
             next_job = Job(
-                id=result.id,  # Keep same ID for tracking
-                prompt=result.result,  # Previous result becomes next prompt
+                id=result.id,  # Keep same ID for tracking  
                 **extra_fields,
             )
 
@@ -208,8 +219,15 @@ class BrokerManager:
         if not self.channel:
             raise RuntimeError("Not connected to RabbitMQ")
 
-        # Set up or get existing results queue (durable for resumability)
-        _, results_queue = await self.setup_queue_infrastructure(queue_name)
+        # For pipeline results queues, consume directly from the specified queue
+        # For regular job queues, use the .results suffix pattern
+        if queue_name.endswith('.results'):
+            # Direct results queue (e.g., pipeline.name.results)
+            results_queue = await self.channel.declare_queue(queue_name, durable=True)
+        else:
+            # Regular job queue pattern (queue_name -> queue_name.results)
+            _, results_queue = await self.setup_queue_infrastructure(queue_name)
+
         await results_queue.consume(callback)
         return results_queue
 

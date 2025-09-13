@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional, List, Dict, Any
-from pydantic import BaseModel, Field, validator
+from pydantic import BaseModel, Field, validator, model_validator
 
 
 class Job(BaseModel):
@@ -19,20 +19,28 @@ class Job(BaseModel):
     class Config:
         extra = "allow"
 
-    @validator("messages", always=True)
-    def validate_prompt_or_messages(cls, v, values):
+    @model_validator(mode='after')
+    def validate_prompt_or_messages(self):
         """Ensure either prompt OR messages is provided, not both or neither."""
-        prompt = values.get("prompt")
-
-        if prompt is not None and v is not None:
+        if self.prompt is not None and self.messages is not None:
             raise ValueError(
                 "Cannot specify both 'prompt' and 'messages'. Use one or the other."
             )
 
-        if prompt is None and v is None:
-            raise ValueError("Must specify either 'prompt' or 'messages'.")
+        if self.prompt is None and self.messages is None:
+            # For data-only jobs, use the first available data field as prompt
+            model_data = self.model_dump()
+            data_fields = {k: v for k, v in model_data.items() 
+                          if k not in {"id", "prompt", "messages", "chat_mode", "stop"} and v is not None}
+            
+            if data_fields:
+                # Use the first data field value as prompt (typically source_text)
+                first_field_value = next(iter(data_fields.values()))
+                self.prompt = str(first_field_value)
+            else:
+                raise ValueError("Must specify either 'prompt' or 'messages'.")
 
-        return v
+        return self
 
     def get_formatted_prompt(self) -> str:
         """Format the prompt template with job data, excluding id and prompt fields."""

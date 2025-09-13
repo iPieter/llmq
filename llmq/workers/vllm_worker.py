@@ -22,10 +22,12 @@ class VLLMWorker(BaseWorker):
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
         pipeline_stages: Optional[list[str]] = None,
+        stage_config: Optional[dict] = None,
     ):
         self.model_name = model_name
         self.tensor_parallel_size = tensor_parallel_size
         self.data_parallel_size = data_parallel_size
+        self.stage_config = stage_config or {}
         super().__init__(
             queue_name,
             worker_id,
@@ -166,8 +168,18 @@ class VLLMWorker(BaseWorker):
 
         results = []
 
-        # Prepare prompt based on chat mode
-        if job.chat_mode or job.messages:
+        # Prepare prompt based on chat mode and pipeline stage configuration
+        if self.is_pipeline_worker and "messages" in self.stage_config:
+            # Pipeline mode: use template messages from stage config
+            job_data = job.model_dump()
+            template_messages = self.stage_config["messages"]
+            resolved_messages = self._resolve_template_messages(template_messages, job_data)
+            
+            # Use tokenizer to format chat template
+            prompt = tokenizer.apply_chat_template(  # type: ignore
+                conversation=resolved_messages, tokenize=False, add_generation_prompt=True
+            )
+        elif job.chat_mode or job.messages:
             if not job.messages:
                 raise ValueError("Chat mode enabled but no messages provided")
 
@@ -193,6 +205,11 @@ class VLLMWorker(BaseWorker):
         generated_text = final_output.outputs[0].text if final_output.outputs else ""
 
         return generated_text
+
+    def _resolve_template_messages(self, template_messages: list, job_data: dict) -> list:
+        """Resolve template variables in messages using job data."""
+        from llmq.utils.template import resolve_template_messages
+        return resolve_template_messages(template_messages, job_data)
 
     async def _cleanup_processor(self) -> None:
         """Clean up vLLM engine resources."""

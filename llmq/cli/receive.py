@@ -111,7 +111,7 @@ class ResultReceiver:
 
         async def result_handler(message: AbstractIncomingMessage):
             try:
-                result = Result.parse_raw(message.body)
+                result = Result.model_validate_json(message.body)
 
                 # Output result to stdout
                 result_json = result.model_dump_json() + "\n"
@@ -250,7 +250,7 @@ class PipelineResultReceiver:
 
         async def result_handler(message: AbstractIncomingMessage):
             try:
-                result = Result.parse_raw(message.body)
+                result = Result.model_validate_json(message.body)
 
                 # Output result to stdout
                 result_json = result.model_dump_json() + "\n"
