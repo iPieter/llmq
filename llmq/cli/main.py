@@ -18,8 +18,13 @@ def worker():
 
 
 @cli.command()
-@click.argument("queue_name")
-@click.argument("jobs_source")  # Can be file path or dataset name
+@click.argument("first_arg")
+@click.argument("second_arg", required=False)  # Can be file path or dataset name
+@click.option(
+    "-p", "--pipeline",
+    "pipeline_config",
+    help="Pipeline configuration file (TOML/YAML format)",
+)
 @click.option(
     "--timeout",
     default=300,
@@ -42,8 +47,9 @@ def worker():
     help="Stream results back immediately (backwards compatibility mode)",
 )
 def submit(
-    queue_name: str,
-    jobs_source: str,
+    first_arg: str,
+    second_arg: Optional[str],
+    pipeline_config: Optional[str],
     timeout: int,
     column_mapping: tuple,
     max_samples: int,
@@ -51,42 +57,48 @@ def submit(
     subset: str,
     stream: bool,
 ):
-    """Submit jobs from JSONL file or Hugging Face dataset to queue
+    """Submit jobs from JSONL file or Hugging Face dataset to queue or pipeline
+
+    Usage patterns:
+    \b
+    # Submit to queue (traditional mode)
+    llmq submit QUEUE_NAME JOBS_SOURCE
+
+    # Submit to pipeline (new simplified mode)
+    llmq submit -p pipeline.toml JOBS_SOURCE
 
     By default, jobs are submitted and you can receive results separately using:
-    llmq receive <queue-name>
+    \b
+    llmq receive QUEUE_NAME
+    llmq receive -p pipeline.toml
 
     The --stream flag provides backwards compatibility - it submits jobs AND
     streams results back immediately (like the old behavior).
 
     The --map option supports three types of mappings:
     1. Simple column mapping: --map field=column
-    2. Template strings: --map field="Template with {column}"  
+    2. Template strings: --map field="Template with {column}"
     3. JSON templates: --map field='{"key": "value with {column}"}'
 
     Examples:
     \b
-    # Submit jobs only (new default behavior)
+    # Traditional queue submission
     llmq submit translation-queue example_jobs.jsonl
-    
-    # Receive results separately 
     llmq receive translation-queue > results.jsonl
+
+    # New simplified pipeline submission
+    llmq submit -p example-pipeline.toml test-jobs.jsonl
+    llmq receive -p example-pipeline.toml > results.jsonl
 
     # Submit with streaming (backwards compatibility)
     llmq submit translation-queue example_jobs.jsonl --stream > results.jsonl
+    llmq submit -p example-pipeline.toml test-jobs.jsonl --stream > results.jsonl
 
-    # Simple mapping from dataset column to job field
+    # Dataset with mapping
     llmq submit translation-queue HuggingFaceFW/fineweb --map source_text=text --max-samples 1000
-
-    # Template string mapping
-    llmq submit translation-queue HuggingFaceFW/fineweb --map prompt="Translate to Dutch: {text}" --max-samples 1000
-
-    # JSON mapping for chat messages
-    llmq submit translation-queue HuggingFaceFW/fineweb \\
-      --map 'messages=[{"role": "user", "content": "Translate to Dutch:\\nEnglish: {text}\\nDutch: "}]' \\
-      --map source_text=text --max-samples 1000
+    llmq submit -p pipeline.toml HuggingFaceFW/fineweb --map prompt="Translate: {text}" --max-samples 1000
     """
-    from llmq.cli.submit import run_submit
+    from llmq.cli.submit import run_submit, run_pipeline_submit
 
     # Parse column mapping from CLI format
     mapping_dict = {}
@@ -99,19 +111,44 @@ def submit(
                 f"Warning: Invalid mapping format '{mapping}'. Use key=value format."
             )
 
-    run_submit(
-        queue_name,
-        jobs_source,
-        timeout,
-        mapping_dict if mapping_dict else None,
-        max_samples,
-        split,
-        subset,
-        stream,
-    )
+    # Handle pipeline mode vs regular queue mode
+    if pipeline_config:
+        # Pipeline mode: llmq submit -p pipeline.toml jobs.jsonl
+        # In this case, first_arg is the jobs source
+        jobs_source = first_arg
+        if jobs_source is None:
+            click.echo("Error: jobs source is required when using -p/--pipeline flag")
+            raise click.Abort()
+
+        run_pipeline_submit(
+            pipeline_config,
+            jobs_source,
+            timeout,
+            mapping_dict if mapping_dict else None,
+            max_samples,
+            split,
+            subset,
+            stream,
+        )
+    else:
+        # Regular queue mode: llmq submit queue-name jobs.jsonl
+        if second_arg is None:
+            click.echo("Error: jobs source is required when not using pipeline mode")
+            raise click.Abort()
+
+        run_submit(
+            first_arg,  # This is the queue name in regular mode
+            second_arg,  # This is the jobs source
+            timeout,
+            mapping_dict if mapping_dict else None,
+            max_samples,
+            split,
+            subset,
+            stream,
+        )
 
 
-@cli.command("pipeline")
+@cli.command("pipeline", deprecated=True)
 @click.argument("pipeline_config_path")
 @click.argument("jobs_source")  # Can be file path or dataset name
 @click.option(
@@ -145,7 +182,12 @@ def pipeline_submit(
     subset: str,
     stream: bool,
 ):
-    """Submit jobs through a multi-stage pipeline
+    """[DEPRECATED] Submit jobs through a multi-stage pipeline
+
+    This command is deprecated. Use the simplified syntax instead:
+    \b
+    # Instead of: llmq pipeline pipeline.yaml jobs.jsonl
+    # Use:        llmq submit -p pipeline.yaml jobs.jsonl
 
     Pipeline configuration is defined in YAML format:
     \b
@@ -168,13 +210,22 @@ def pipeline_submit(
 
     Examples:
     \b
-    # Run pipeline on JSONL file
+    # DEPRECATED - Run pipeline on JSONL file
     llmq pipeline pipeline.yaml jobs.jsonl
 
-    # Run pipeline on dataset with column mapping
+    # NEW SYNTAX - Run pipeline on JSONL file
+    llmq submit -p pipeline.yaml jobs.jsonl
+
+    # DEPRECATED - Run pipeline on dataset with column mapping
     llmq pipeline pipeline.yaml HuggingFaceFW/fineweb --map prompt=text --max-samples 100
+
+    # NEW SYNTAX - Run pipeline on dataset with column mapping
+    llmq submit -p pipeline.yaml HuggingFaceFW/fineweb --map prompt=text --max-samples 100
     """
     from llmq.cli.submit import run_pipeline_submit
+
+    # Show deprecation warning
+    click.echo("⚠️  WARNING: This command is deprecated. Use 'llmq submit -p PIPELINE_CONFIG JOBS_SOURCE' instead.", err=True)
 
     # Parse column mapping from CLI format
     mapping_dict = {}
@@ -231,39 +282,78 @@ def errors(queue_name: str, limit: int):
 
 
 @cli.command()
-@click.argument("queue_name")
+@click.argument("queue_name_or_pipeline", required=False)
+@click.option(
+    "-p", "--pipeline",
+    "pipeline_config",
+    help="Pipeline configuration file (TOML/YAML format)",
+)
 @click.option("--timeout", default=300, help="Timeout in seconds to wait for results")
-def receive(queue_name: str, timeout: int):
-    """Receive results from a queue
+def receive(queue_name_or_pipeline: Optional[str], pipeline_config: Optional[str], timeout: int):
+    """Receive results from a queue or pipeline
+
+    Usage patterns:
+    \b
+    # Receive from queue (traditional mode)
+    llmq receive QUEUE_NAME
+
+    # Receive from pipeline (new simplified mode)
+    llmq receive -p pipeline.toml
 
     Examples:
-    \\b
-    # Receive results from queue
+    \b
+    # Traditional queue receiving
     llmq receive translation-queue > results.jsonl
-
-    # With custom timeout
     llmq receive translation-queue --timeout 600
+
+    # New simplified pipeline receiving
+    llmq receive -p example-pipeline.toml > results.jsonl
+    llmq receive -p example-pipeline.toml --timeout 600
     """
-    from llmq.cli.receive import run_receive
+    from llmq.cli.receive import run_receive, run_pipeline_receive
 
-    run_receive(queue_name, timeout)
+    # Handle pipeline mode vs regular queue mode
+    if pipeline_config:
+        # Pipeline mode: llmq receive -p pipeline.toml
+        run_pipeline_receive(pipeline_config, timeout)
+    else:
+        # Regular queue mode: llmq receive queue-name
+        if queue_name_or_pipeline is None:
+            click.echo("Error: queue name is required when not using -p/--pipeline flag")
+            raise click.Abort()
+
+        run_receive(queue_name_or_pipeline, timeout)
 
 
-@cli.command("receive-pipeline")
+@cli.command("receive-pipeline", deprecated=True)
 @click.argument("pipeline_config_path")
 @click.option("--timeout", default=300, help="Timeout in seconds to wait for results")
 def receive_pipeline(pipeline_config_path: str, timeout: int):
-    """Receive results from a pipeline
+    """[DEPRECATED] Receive results from a pipeline
+
+    This command is deprecated. Use the simplified syntax instead:
+    \b
+    # Instead of: llmq receive-pipeline pipeline.yaml
+    # Use:        llmq receive -p pipeline.yaml
 
     Examples:
-    \\b
-    # Receive pipeline results
+    \b
+    # DEPRECATED - Receive pipeline results
     llmq receive-pipeline pipeline.yaml > results.jsonl
 
-    # With custom timeout
+    # NEW SYNTAX - Receive pipeline results
+    llmq receive -p pipeline.yaml > results.jsonl
+
+    # DEPRECATED - With custom timeout
     llmq receive-pipeline pipeline.yaml --timeout 600
+
+    # NEW SYNTAX - With custom timeout
+    llmq receive -p pipeline.yaml --timeout 600
     """
     from llmq.cli.receive import run_pipeline_receive
+
+    # Show deprecation warning
+    click.echo("⚠️  WARNING: This command is deprecated. Use 'llmq receive -p PIPELINE_CONFIG' instead.", err=True)
 
     run_pipeline_receive(pipeline_config_path, timeout)
 
