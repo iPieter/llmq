@@ -23,6 +23,7 @@
   - [Run Your First Job](#run-your-first-job)
 - [How It Works](#how-it-works)
 - [Use Cases](#use-cases)
+  - [Multi-Stage Pipelines](#multi-stage-pipelines)
   - [Translation Pipeline](#translation-pipeline)
   - [Data Cleaning at Scale](#data-cleaning-at-scale)
   - [RL Training Rollouts](#rl-training-rollouts)
@@ -77,20 +78,32 @@ docker run -d --name rabbitmq \
 
 ### Run Your First Job
 
+**Option 1: Simple Queue (Traditional)**
 ```bash
 # Start a worker
 llmq worker run Unbabel/Tower-Plus-9B translation-queue
 
-# Submit jobs (in another terminal) 
+# Submit jobs (in another terminal)
 echo '{"id": "hello", "messages": [{"role": "user", "content": "Translate the following German source text to English:\\nGerman: Ich  bin eine Giraffe.\\nEnglish: "}]}' \
     | llmq submit translation-queue -
 
 # Receive results (separate command for resumable downloads)
 llmq receive translation-queue > results.jsonl
+```
 
-# Or use streaming mode (backwards compatible)
-echo '{"id": "hello", "messages": [{"role": "user", "content": "Translate the following German source text to English:\\nGerman: Ich  bin eine Giraffe.\\nEnglish: "}]}' \
-    | llmq submit translation-queue - --stream > results.jsonl
+**Option 2: Pipeline (Simplified - Recommended)**
+```bash
+# Use the included example-pipeline.yaml (translation → formatting)
+# Start pipeline workers (in separate terminals)
+llmq worker pipeline example-pipeline.yaml translation
+llmq worker pipeline example-pipeline.yaml formatting
+
+# Submit jobs with clean syntax - just provide the data!
+echo '{"id": "hello", "source_text": "Ich bin eine Giraffe", "source_lang": "German"}' \
+    | llmq submit -p example-pipeline.yaml -
+
+# Receive results
+llmq receive -p example-pipeline.yaml > results.jsonl
 ```
 
 ## How It Works
@@ -113,6 +126,46 @@ llmq now provides two modes for handling jobs and results:
 - **Better for large batches** - Submit thousands of jobs, then receive results at your own pace
 
 ## Use Cases
+
+### Multi-Stage Pipelines
+
+**NEW**: llmq now supports multi-stage pipelines with a simplified API. Perfect for complex workflows like translation → post-processing → formatting.
+
+```bash
+# Your pipeline configuration (example-pipeline.yaml)
+name: translation-pipeline
+stages:
+  - name: translation
+    worker: vllm
+    config:
+      model: "Unbabel/Tower-Plus-9B"
+      messages:
+        - role: "user"
+          content: "Translate the following {source_lang} source text to English:\n{source_lang}: {source_text}\nEnglish: "
+  - name: formatting
+    worker: vllm
+    config:
+      model: "google/gemma-2-9b-it"
+      messages:
+        - role: "user"
+          content: "Clean up and format the following translated text with proper markdown formatting. Keep the meaning intact but improve readability:\n\n{translation_result}"
+
+# Submit jobs with simplified syntax
+llmq submit -p example-pipeline.yaml jobs.jsonl
+
+# Receive final results
+llmq receive -p example-pipeline.yaml > results.jsonl
+
+# Start workers for each stage (in separate terminals)
+llmq worker pipeline example-pipeline.yaml translation
+llmq worker pipeline example-pipeline.yaml formatting
+```
+
+**Benefits of pipelines:**
+- **Automatic job routing** between stages
+- **Parallel processing** - multiple workers per stage
+- **Fault tolerance** - failed jobs don't break the entire pipeline
+- **Built-in templates** - define prompts once in the pipeline config
 
 ### Translation Pipeline
 
@@ -185,6 +238,19 @@ All workers support the same configuration options and can be scaled horizontall
 
 ### Job Management
 
+**Pipeline Mode (Simplified):**
+```bash
+# Submit to pipeline
+llmq submit -p pipeline.yaml jobs.jsonl
+
+# Receive from pipeline
+llmq receive -p pipeline.yaml > results.jsonl
+
+# Stream pipeline results (backwards compatible)
+llmq submit -p pipeline.yaml jobs.jsonl --stream > results.jsonl
+```
+
+**Single Queue Mode (Traditional):**
 ```bash
 # Submit jobs from file or stdin
 llmq submit <queue-name> <jobs.jsonl>
@@ -202,6 +268,17 @@ llmq status <queue-name>
 
 ### Worker Management
 
+**Pipeline Workers:**
+```bash
+# Start workers for pipeline stages
+llmq worker pipeline pipeline.yaml <stage-name>
+llmq worker pipeline example-pipeline.yaml translation    # First stage
+llmq worker pipeline example-pipeline.yaml formatting     # Second stage
+
+# Multiple workers per stage: run command multiple times
+```
+
+**Single Queue Workers:**
 ```bash
 # Start GPU-accelerated worker
 llmq worker run <model-name> <queue-name>
@@ -260,6 +337,14 @@ LLMQ_CHUNK_SIZE=10000               # Bulk submission size
 
 ## Job Formats
 
+**Pipelines** automatically handle prompt templates based on worker configuration, so you only need to provide the data:
+
+```json
+{"id": "job-1", "text": "Hello world", "language": "Spanish"}
+```
+
+For **single queues**, you need to provide the full prompt structure:
+
 ### Modern Chat Format (Recommended)
 
 ```json
@@ -277,14 +362,14 @@ LLMQ_CHUNK_SIZE=10000               # Bulk submission size
 
 ```json
 {
-  "id": "job-1", 
+  "id": "job-1",
   "prompt": "Translate to {language}: {text}",
   "text": "Hello world",
   "language": "Spanish"
 }
 ```
 
-Both formats support template substitution with `{variable}` syntax.
+All formats support template substitution with `{variable}` syntax. **Pipelines make this simpler** by handling the prompt structure automatically based on your pipeline configuration.
 
 ## Architecture
 
