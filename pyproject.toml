@@ -23,7 +23,6 @@ dependencies = [
     "httpx>=0.27.0",
     "PyYAML>=6.0.0",
     "semhash>=0.3.1",
-    "pre-commit>=4.3.0",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -55,6 +54,7 @@ dev = [
     "build>=1.0.0",
     "twine>=4.0.0",
     "setuptools-scm[toml]>=6.2",
+    "pre-commit>=4.3.0",
 ]
 
 [project.urls]
