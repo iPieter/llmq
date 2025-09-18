@@ -43,12 +43,12 @@ test = [
     "pytest-cov>=6.0.0",
     "faker>=30.0.0",
     "types-PyYAML>=6.0.0",
-]
-dev = [
-    "llmq[test]",
     "black>=24.0.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
+]
+dev = [
+    "llmq[test]",
     "bandit[toml]>=1.7.0",
     "safety>=3.0.0",
     "build>=1.0.0",
