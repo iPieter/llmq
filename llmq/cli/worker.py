@@ -127,29 +127,6 @@ def run_semhash_worker(
         sys.exit(1)
 
 
-def run_filter_worker(queue_name: str, filter_field: str, filter_value: str):
-    """Run filter worker for simple job filtering."""
-    console = Console()
-
-    try:
-        # Lazy import
-        from llmq.workers.dummy_worker import FilterWorker
-
-        console.print(f"[blue]Starting filter worker for queue '{queue_name}'[/blue]")
-        console.print(f"[dim]Filter: {filter_field} contains '{filter_value}'[/dim]")
-
-        worker = FilterWorker(queue_name, filter_field, filter_value)
-        asyncio.run(worker.run())
-
-    except KeyboardInterrupt:
-        console.print("\n[yellow]Filter worker stopped by user[/yellow]")
-    except Exception as e:
-        logger = setup_logging("llmq.cli.worker")
-        logger.error(f"Filter worker error: {e}", exc_info=True)
-        console.print(f"[red]Error: {e}[/red]")
-        sys.exit(1)
-
-
 def run_pipeline_worker(
     pipeline_config_path: str, stage_name: str, concurrency: Optional[int] = None
 ):
@@ -187,9 +164,7 @@ def run_pipeline_worker(
         console.print(f"[dim]Queue: {queue_name}[/dim]")
 
         # Launch appropriate worker type
-        worker: Optional[
-            Union["VLLMWorker", "DummyWorker", "FilterWorker", "SemHashWorker"]
-        ] = None
+        worker: Optional[Union["VLLMWorker", "DummyWorker", "SemHashWorker"]] = None
         if stage.worker == "vllm":
             # Need model name from stage config
             if stage.config is None:
@@ -249,37 +224,10 @@ def run_pipeline_worker(
                 mode=mode,
             )
 
-        elif stage.worker == "filter":
-            # Need filter config
-            if stage.config is None:
-                console.print(
-                    "[red]Filter worker requires stage config with 'filter_field' and 'filter_value'[/red]"
-                )
-                sys.exit(1)
-
-            filter_field = stage.config.get("filter_field")
-            filter_value = stage.config.get("filter_value")
-            if not filter_field or not filter_value:
-                console.print(
-                    "[red]Filter worker requires 'filter_field' and 'filter_value' in stage config[/red]"
-                )
-                sys.exit(1)
-
-            from llmq.workers.dummy_worker import FilterWorker
-
-            worker = FilterWorker(
-                queue_name,
-                filter_field,
-                filter_value,
-                pipeline_name=pipeline_config.name,
-                stage_name=stage_name,
-                pipeline_stages=pipeline_stages,
-            )
-
         else:
             console.print(f"[red]Unknown worker type: {stage.worker}[/red]")
             console.print(
-                "[yellow]Supported worker types: vllm, dummy, semhash, filter[/yellow]"
+                "[yellow]Supported worker types: vllm, dummy, semhash[/yellow]"
             )
             sys.exit(1)
 
