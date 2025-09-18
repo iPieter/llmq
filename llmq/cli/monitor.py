@@ -1,12 +1,16 @@
 import asyncio
 from datetime import datetime
+from pathlib import Path
 
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
+from rich.text import Text
+from rich.box import ROUNDED
 
 from llmq.core.config import get_config
 from llmq.core.broker import BrokerManager
+from llmq.core.pipeline import PipelineConfig
 from llmq.utils.logging import setup_logging
 
 
@@ -345,4 +349,220 @@ def clear_queue(queue_name: str):
     except Exception as e:
         logger = setup_logging("llmq.cli.monitor")
         logger.error(f"Clear queue error: {e}", exc_info=True)
+        console.print(f"[red]Error: {e}[/red]")
+
+
+async def get_pipeline_stats_async(pipeline_config: PipelineConfig):
+    """Get statistics for all queues in a pipeline."""
+    broker = BrokerManager(get_config())
+    try:
+        await broker.connect()
+
+        pipeline_stats = {}
+
+        # Get stats for each stage queue
+        for stage in pipeline_config.stages:
+            queue_name = pipeline_config.get_stage_queue_name(stage.name)
+            try:
+                stats = await broker.get_queue_stats(queue_name)
+                pipeline_stats[stage.name] = stats
+            except Exception as e:
+                pipeline_stats[stage.name] = None
+
+        # Get stats for results queue
+        results_queue = pipeline_config.get_pipeline_results_queue_name()
+        try:
+            results_stats = await broker.get_queue_stats(results_queue)
+            pipeline_stats['results'] = results_stats
+        except Exception as e:
+            pipeline_stats['results'] = None
+
+        return pipeline_stats
+
+    except Exception as e:
+        return None, str(e)
+    finally:
+        await broker.disconnect()
+
+
+def show_pipeline_status(pipeline_config_path: str):
+    """Show pipeline status and visualization."""
+    console = Console()
+
+    try:
+        # Load pipeline configuration
+        pipeline_path = Path(pipeline_config_path)
+        if not pipeline_path.exists():
+            console.print(f"[red]Error: Pipeline configuration file not found: {pipeline_config_path}[/red]")
+            return
+
+        try:
+            pipeline_config = PipelineConfig.from_yaml_file(pipeline_path)
+        except Exception as e:
+            console.print(f"[red]Error loading pipeline configuration: {e}[/red]")
+            return
+
+        # Get pipeline statistics
+        with console.status(f"Getting pipeline status for '{pipeline_config.name}'..."):
+            result = asyncio.run(get_pipeline_stats_async(pipeline_config))
+
+        if isinstance(result, tuple):
+            pipeline_stats, error = result
+            if pipeline_stats is None:
+                console.print(f"[red]Error getting pipeline stats: {error}[/red]")
+                return
+        else:
+            pipeline_stats = result
+
+        # Create pipeline visualization
+        console.print()
+        console.print(Panel(
+            f"[bold cyan]{pipeline_config.name}[/bold cyan]",
+            title="Pipeline Status",
+            subtitle=f"Configuration: {pipeline_config_path}",
+            box=ROUNDED
+        ))
+
+        # Create stages table
+        stages_table = Table(title="Pipeline Stages", box=ROUNDED)
+        stages_table.add_column("Stage", style="cyan", width=15)
+        stages_table.add_column("Worker Type", style="yellow", width=12)
+        stages_table.add_column("Queue", style="dim", width=25)
+        stages_table.add_column("Messages", style="green", justify="right", width=8)
+        stages_table.add_column("Consumers", style="blue", justify="right", width=9)
+        stages_table.add_column("Status", style="bold", width=10)
+
+        # Add each stage to the table
+        for i, stage in enumerate(pipeline_config.stages):
+            stage_stats = pipeline_stats.get(stage.name)
+            queue_name = pipeline_config.get_stage_queue_name(stage.name)
+
+            if stage_stats is None:
+                messages = "N/A"
+                consumers = "N/A"
+                status = "[red]ERROR[/red]"
+            else:
+                messages = str(stage_stats.message_count) if stage_stats.message_count is not None else "N/A"
+                consumers = str(stage_stats.consumer_count) if stage_stats.consumer_count is not None else "N/A"
+
+                # Determine status based on consumers and message count
+                if stage_stats.consumer_count == 0:
+                    status = "[yellow]NO WORKERS[/yellow]"
+                elif stage_stats.message_count and stage_stats.message_count > 1000:
+                    status = "[yellow]BACKLOG[/yellow]"
+                else:
+                    status = "[green]HEALTHY[/green]"
+
+            # Add arrow for flow visualization
+            stage_name = stage.name
+            if i < len(pipeline_config.stages) - 1:
+                stage_name += " →"
+
+            stages_table.add_row(
+                stage_name,
+                stage.worker,
+                queue_name,
+                messages,
+                consumers,
+                status
+            )
+
+        console.print(stages_table)
+
+        # Show results queue
+        results_stats = pipeline_stats.get('results')
+        results_queue = pipeline_config.get_pipeline_results_queue_name()
+
+        results_table = Table(title="Pipeline Results", box=ROUNDED)
+        results_table.add_column("Queue", style="cyan")
+        results_table.add_column("Ready Results", style="green", justify="right")
+        results_table.add_column("Status", style="bold")
+
+        if results_stats is None:
+            ready_results = "N/A"
+            status = "[red]ERROR[/red]"
+        else:
+            ready_results = str(results_stats.message_count) if results_stats.message_count is not None else "N/A"
+            if results_stats.message_count and results_stats.message_count > 0:
+                status = "[green]RESULTS AVAILABLE[/green]"
+            else:
+                status = "[dim]NO RESULTS[/dim]"
+
+        results_table.add_row(results_queue, ready_results, status)
+        console.print(results_table)
+
+        # Show pipeline flow diagram
+        console.print()
+        flow_text = Text("Pipeline Flow: ", style="bold")
+
+        for i, stage in enumerate(pipeline_config.stages):
+            stage_stats = pipeline_stats.get(stage.name)
+
+            # Color code based on status
+            if stage_stats is None:
+                color = "red"
+            elif stage_stats.consumer_count == 0:
+                color = "yellow"
+            elif stage_stats.message_count and stage_stats.message_count > 1000:
+                color = "yellow"
+            else:
+                color = "green"
+
+            flow_text.append(stage.name, style=f"bold {color}")
+
+            if i < len(pipeline_config.stages) - 1:
+                flow_text.append(" → ", style="dim")
+
+        flow_text.append(" → ", style="dim")
+
+        # Results queue status
+        results_stats = pipeline_stats.get('results')
+        if results_stats is None:
+            color = "red"
+        elif results_stats.message_count and results_stats.message_count > 0:
+            color = "green"
+        else:
+            color = "dim"
+
+        flow_text.append("RESULTS", style=f"bold {color}")
+
+        console.print(Panel(flow_text, title="Data Flow", box=ROUNDED))
+
+        # Show warnings and suggestions
+        warnings = []
+
+        # Check for stages without consumers
+        stages_without_consumers = []
+        for stage in pipeline_config.stages:
+            stage_stats = pipeline_stats.get(stage.name)
+            if stage_stats and stage_stats.consumer_count == 0:
+                stages_without_consumers.append(stage.name)
+
+        if stages_without_consumers:
+            warnings.append(f"Stages without workers: {', '.join(stages_without_consumers)}")
+
+        # Check for high backlogs
+        stages_with_backlog = []
+        for stage in pipeline_config.stages:
+            stage_stats = pipeline_stats.get(stage.name)
+            if stage_stats and stage_stats.message_count and stage_stats.message_count > 1000:
+                stages_with_backlog.append(f"{stage.name} ({stage_stats.message_count} msgs)")
+
+        if stages_with_backlog:
+            warnings.append(f"High backlog in: {', '.join(stages_with_backlog)}")
+
+        if warnings:
+            warning_text = "\n".join(f"• {warning}" for warning in warnings)
+            console.print(Panel(
+                f"[yellow]{warning_text}[/yellow]",
+                title="⚠️  Warnings",
+                box=ROUNDED
+            ))
+
+        # Show timestamp
+        console.print(f"[dim]Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/dim]")
+
+    except Exception as e:
+        logger = setup_logging("llmq.cli.monitor")
+        logger.error(f"Pipeline status error: {e}", exc_info=True)
         console.print(f"[red]Error: {e}[/red]")
