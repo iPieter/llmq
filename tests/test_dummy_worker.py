@@ -1,7 +1,7 @@
 import pytest
 from unittest.mock import patch
 
-from llmq.workers.dummy_worker import DummyWorker, FilterWorker
+from llmq.workers.dummy_worker import DummyWorker
 from llmq.core.models import Job
 
 # Apply asyncio marker to all async test methods in this module
@@ -95,28 +95,3 @@ class TestDummyWorker:
 
                 result = await worker._process_job(job)
                 assert result == expected_output
-
-
-class TestWorkerIntegration:
-    """Test worker integration scenarios."""
-
-    @pytest.mark.unit
-    async def test_multiple_workers_different_types(self):
-        """Test that different worker types can coexist."""
-        dummy_worker = DummyWorker("test-queue", worker_id="dummy-1")
-        filter_worker = FilterWorker("test-queue", "type", "test", worker_id="filter-1")
-
-        # Both workers should have different IDs and behavior
-        assert dummy_worker.worker_id == "dummy-1"
-        assert filter_worker.worker_id == "filter-1"
-
-        # Test they process jobs differently
-        job = Job(id="test-001", prompt="Test job", text="Hello", type="test")
-
-        with patch("asyncio.sleep"):
-            dummy_result = await dummy_worker._process_job(job)
-            filter_result = await filter_worker._process_job(job)
-
-        assert dummy_result == "echo Hello"
-        assert filter_result.startswith("ACCEPTED:")
-        assert dummy_result != filter_result
