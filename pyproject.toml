@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "llmq"
 dynamic = ["version"]
-description = "High-Performance vLLM Job Queue Package"
-authors = [{name = "Pieter", email = "pieter@example.com"}]
+description = "todo"
+authors = [{name = "Pieter", email = "llmq@pieter.ai"}]
 license = {text = "MIT"}
 readme = "README.md"
 requires-python = ">=3.9"

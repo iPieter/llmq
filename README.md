@@ -9,54 +9,36 @@
 <img src="https://github.com/iPieter/llmq/raw/main/assets/render1755117250879.gif" alt="LLMQ Demo" width="600">
 
 
-**A Scheduler for Batched LLM Inference** - Like OpenAI's Batch API, but for self-hosted open-source models. Submit millions of inference jobs, let workers process them with vLLM-backed inference, and stream results back to a single file. Ideal for synthetic data generation, translation pipelines, and batch inference workloads.
+**A Scheduler for Distributed LLM Inference.** Submit millions of inference jobs to distributed workers, get results back reliably. Built for research teams and production workloads that need control over their inference stack.
 
-> **Note**: API may change until v1.0 as I'm actively developing new features.
+<h4 align="center">
+    <p>
+        <a href="#why-llmq">Why llmq?</a> •
+        <a href="#quick-start">Quick Start</a> •
+        <a href="#pipelines">Pipelines</a> •
+        <a href="#production">Production</a> •
+        <a href="#examples">Examples</a>
+    </p>
+</h4>
 
-<details>
-<summary><strong>📋 Table of Contents</strong></summary>
+> **Note**: API may change until v1.0 as new features are being developed.
 
-- [Features](#features)
-- [Quick Start](#quick-start)
-  - [Installation](#installation)
-  - [Start RabbitMQ](#start-rabbitmq)
-  - [Run Your First Job](#run-your-first-job)
-- [How It Works](#how-it-works)
-- [Use Cases](#use-cases)
-  - [Multi-Stage Pipelines](#multi-stage-pipelines)
-  - [Translation Pipeline](#translation-pipeline)
-  - [Data Cleaning at Scale](#data-cleaning-at-scale)
-  - [RL Training Rollouts](#rl-training-rollouts)
-- [Real-World Usage](#real-world-usage)
-- [Worker Types](#worker-types)
-- [Core Commands](#core-commands)
-  - [Job Management](#job-management)
-  - [Worker Management](#worker-management)
-  - [Monitoring](#monitoring)
-- [Configuration](#configuration)
-- [Job Formats](#job-formats)
-- [Architecture](#architecture)
-- [Performance Tips](#performance-tips)
-- [Testing](#testing)
-- [Links](#links)
-- [Advanced Setup](#advanced-setup)
-  - [Docker Compose Setup](#docker-compose-setup)
-  - [Singularity Setup](#singularity-setup)
-  - [Performance Tuning](#performance-tuning)
-  - [Multi-GPU Setup](#multi-gpu-setup)
-  - [Troubleshooting](#troubleshooting)
-- [Acknowledgments](#acknowledgments)
+## Why llmq?
 
-</details>
+llmq provides distributed batched inference for self-hosted models. When you need to process large volumes of inference jobs but want full control over your models, infrastructure, and costs.
 
-## Features
+**Best for:**
+- Research teams processing datasets with custom models
+- Production workflows requiring specific model versions
+- Organizations wanting to avoid per-token pricing
+- Multi-stage processing pipelines
 
-- **High-Performance**: GPU-accelerated inference with vLLM batching
-- **Scalable**: RabbitMQ-based distributed queuing, so never let your GPUs idle  
-- **Simple**: Unix-friendly CLI with piped input/output
-- **Flexible**: Supports many standard LLM operations for synthetic data generation. You can combine different models and process Huggingface datasets directly
+**Not suitable for:**
+- Real-time chat applications
+- Streaming token responses
+- Sub-minute latency requirements
 
-**Not for real-time use**: llmq is designed for (laaarge) batch processing, not chat applications or real-time inference. It doesn't support token streaming or optimized time-to-first-token (TTFT).
+llmq uses vLLM for GPU acceleration and RabbitMQ for reliable job distribution. Workers can be scaled horizontally across multiple machines and GPUs.
 
 ## Quick Start
 
@@ -78,7 +60,6 @@ docker run -d --name rabbitmq \
 
 ### Run Your First Job
 
-**Option 1: Simple Queue (Traditional)**
 ```bash
 # Start a worker
 llmq worker run Unbabel/Tower-Plus-9B translation-queue
@@ -87,52 +68,28 @@ llmq worker run Unbabel/Tower-Plus-9B translation-queue
 echo '{"id": "hello", "messages": [{"role": "user", "content": "Translate the following German source text to English:\\nGerman: Ich  bin eine Giraffe.\\nEnglish: "}]}' \
     | llmq submit translation-queue -
 
-# Receive results (separate command for resumable downloads)
+# Receive results
 llmq receive translation-queue > results.jsonl
 ```
 
-**Option 2: Pipeline (Simplified - Recommended)**
-```bash
-# Use the included example-pipeline.yaml (translation → formatting)
-# Start pipeline workers (in separate terminals)
-llmq worker pipeline example-pipeline.yaml translation
-llmq worker pipeline example-pipeline.yaml formatting
-
-# Submit jobs with clean syntax - just provide the data!
-echo '{"id": "hello", "source_text": "Ich bin eine Giraffe", "source_lang": "German"}' \
-    | llmq submit -p example-pipeline.yaml -
-
-# Receive results
-llmq receive -p example-pipeline.yaml > results.jsonl
-```
+For multi-stage workflows, see the [Pipelines](#pipelines) section.
 
 ## How It Works
 
-llmq now provides two modes for handling jobs and results:
+llmq separates job submission from result collection for better reliability:
 
-### Separate Submit/Receive (Default)
-1. **Submit jobs** - Upload thousands of inference requests to a queue
-2. **Workers process** - GPU-accelerated workers pull jobs and generate responses  
-3. **Receive results** - Download results separately with resumable queue-based retrieval
+1. **Submit jobs** - Upload thousands of inference requests to a RabbitMQ queue
+2. **Workers process** - GPU workers pull jobs and generate responses using vLLM
+3. **Receive results** - Download results separately with resumable retrieval
 
-### Streaming Mode (Backwards Compatible)  
-1. **Submit jobs** - Upload inference requests to a queue
-2. **Workers process** - GPU-accelerated workers pull jobs and generate responses
-3. **Stream results** - Get real-time results as jobs complete, with automatic timeout handling
+This architecture enables resumable downloads, multiple result consumers, and better handling of large batches compared to streaming approaches.
 
-**Benefits of separate submit/receive:**
-- **Resumable downloads** - If your connection drops, you can resume receiving results
-- **Multiple consumers** - Different processes can consume from the same results queue
-- **Better for large batches** - Submit thousands of jobs, then receive results at your own pace
+## Pipelines
 
-## Use Cases
+llmq supports multi-stage pipelines for complex workflows like translation followed by post-processing:
 
-### Multi-Stage Pipelines
-
-**NEW**: llmq now supports multi-stage pipelines with a simplified API. Perfect for complex workflows like translation → post-processing → formatting.
-
-```bash
-# Your pipeline configuration (example-pipeline.yaml)
+```yaml
+# example-pipeline.yaml
 name: translation-pipeline
 stages:
   - name: translation
@@ -149,47 +106,61 @@ stages:
       messages:
         - role: "user"
           content: "Clean up and format the following translated text with proper markdown formatting. Keep the meaning intact but improve readability:\n\n{translation_result}"
+```
 
-# Submit jobs with simplified syntax
-llmq submit -p example-pipeline.yaml jobs.jsonl
+```bash
+# Start workers for each stage
+llmq worker pipeline example-pipeline.yaml translation
+llmq worker pipeline example-pipeline.yaml formatting
+
+# Submit data (pipeline handles prompt templates)
+echo '{"id": "job1", "source_text": "Bonjour", "source_lang": "French"}' \
+    | llmq submit -p example-pipeline.yaml -
 
 # Receive final results
 llmq receive -p example-pipeline.yaml > results.jsonl
-
-# Start workers for each stage (in separate terminals)
-llmq worker pipeline example-pipeline.yaml translation
-llmq worker pipeline example-pipeline.yaml formatting
 ```
 
-**Benefits of pipelines:**
-- **Automatic job routing** between stages
-- **Parallel processing** - multiple workers per stage
-- **Fault tolerance** - failed jobs don't break the entire pipeline
-- **Built-in templates** - define prompts once in the pipeline config
+## Production
 
-### Translation Pipeline
-
-Process translation jobs with specialized multilingual models:
-
+### Performance Configuration
 ```bash
-# Start translation worker
-llmq worker run Unbabel/Tower-Plus-9B translation-queue
-
-# Example jobs file (jobs.jsonl)
-{"id": "job1", "messages": [{"role": "user", "content": "Translate to Spanish: {text}"}], "text": "Hello world"}
-{"id": "job2", "messages": [{"role": "user", "content": "Translate to French: {text}"}], "text": "Good morning"}
-
-# Submit jobs
-llmq submit translation-queue jobs.jsonl
-
-# Receive results separately (resumable) 
-llmq receive translation-queue > results.jsonl
-
-# Or combine both (backwards compatible)
-llmq submit translation-queue jobs.jsonl --stream > results.jsonl
+# Optimize for your hardware
+export VLLM_GPU_MEMORY_UTILIZATION=0.9     # GPU memory usage
+export VLLM_MAX_NUM_SEQS=256               # Batch size
+export VLLM_QUEUE_PREFETCH=100             # Messages per worker
 ```
 
-### Data Cleaning at Scale
+### Multi-GPU Setup
+```bash
+# vLLM automatically uses all visible GPUs
+CUDA_VISIBLE_DEVICES=0,1,2,3 llmq worker run model-name queue-name
+```
+
+### Monitoring
+```bash
+# Check system status
+llmq status
+
+# Monitor specific queue
+llmq status queue-name
+```
+
+## Examples
+
+
+### SLURM scripts
+
+`llmq` has been used in production to process large-scale translation datasets on HPC clusters. The table below shows the datasets processed, their outputs, and the SLURM scripts used:
+
+| Dataset Created | Model Used | SLURM Script |
+|---|---|---|
+| 🤗 [fineweb-edu-german-mt](https://huggingface.co/datasets/pdelobelle/fineweb-edu-german-mt) | Tower-Plus-72B | [`run_german_72b_translation.slurm`](utils/run_german_72b_translation.slurm) |
+| 🤗 [fineweb-edu-dutch-mt](https://huggingface.co/datasets/pdelobelle/fineweb-edu-dutch-mt) | Tower-Plus-9B | [`run_dutch_9b_translation.slurm`](utils/run_dutch_9b_translation.slurm) |
+| 🤗 [nemotron-dutch-mt](https://huggingface.co/datasets/pdelobelle/nemotron-dutch-mt) | Tower-Plus-9B | [`run_dutch_nemotron.slurm`](utils/run_dutch_nemotron.slurm) |
+
+
+### Huggingface datasets
 
 Clean and process large datasets with custom prompts:
 
@@ -210,18 +181,7 @@ llmq receive cleaning-queue > cleaned_data.jsonl
 
 Currently requires manual orchestration - you need to manually switch between queues and manage workers for different training phases. For example, you'd start policy workers, submit rollout jobs, tear down those workers, then start reward model workers to score the rollouts.
 
-Future versions will add automatic model switching and queue coordination to streamline complex RL workflows with policy models, reward models, and value functions.
-
-## Real-World Usage
-
-`llmq` has been used in production to process large-scale translation datasets on HPC clusters. The table below shows the datasets processed, their outputs, and the SLURM scripts used:
-
-| Dataset Created | Model Used | SLURM Script |
-|---|---|---|
-| 🤗 [fineweb-edu-german-mt](https://huggingface.co/datasets/pdelobelle/fineweb-edu-german-mt) | Tower-Plus-72B | [`run_german_72b_translation.slurm`](utils/run_german_72b_translation.slurm) |
-| 🤗 [fineweb-edu-dutch-mt](https://huggingface.co/datasets/pdelobelle/fineweb-edu-dutch-mt) | Tower-Plus-9B | [`run_dutch_9b_translation.slurm`](utils/run_dutch_9b_translation.slurm) |
-| 🤗 [nemotron-dutch-mt](https://huggingface.co/datasets/pdelobelle/nemotron-dutch-mt) | Tower-Plus-9B | [`run_dutch_nemotron.slurm`](utils/run_dutch_nemotron.slurm) |
-
+Future versions will add automatic model switching and queue coordination to streamline complex RL workflows.
 
 
 ## Worker Types
