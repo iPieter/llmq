@@ -252,13 +252,46 @@ def pipeline_submit(
 
 @cli.command()
 @click.argument("queue_name", required=False)
-def status(queue_name: Optional[str] = None):
-    """Show connection status or queue statistics"""
-    from llmq.cli.monitor import show_status, show_connection_status
+@click.option(
+    "-p", "--pipeline",
+    "pipeline_config",
+    help="Pipeline configuration file (YAML format)",
+)
+def status(queue_name: Optional[str] = None, pipeline_config: Optional[str] = None):
+    """Show connection status, queue statistics, or pipeline visualization
 
-    if queue_name:
+    Usage patterns:
+    \b
+    # Show connection status
+    llmq status
+
+    # Show queue statistics
+    llmq status QUEUE_NAME
+
+    # Show pipeline visualization
+    llmq status -p pipeline.yaml
+
+    Examples:
+    \b
+    # Check RabbitMQ connection
+    llmq status
+
+    # Monitor specific queue
+    llmq status translation-queue
+
+    # Visualize pipeline status
+    llmq status -p example-pipeline.yaml
+    """
+    from llmq.cli.monitor import show_status, show_connection_status, show_pipeline_status
+
+    if pipeline_config:
+        # Pipeline mode: llmq status -p pipeline.yaml
+        show_pipeline_status(pipeline_config)
+    elif queue_name:
+        # Queue mode: llmq status queue-name
         show_status(queue_name)
     else:
+        # Connection status mode: llmq status
         show_connection_status()
 
 
