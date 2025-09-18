@@ -21,7 +21,8 @@ def worker():
 @click.argument("first_arg")
 @click.argument("second_arg", required=False)  # Can be file path or dataset name
 @click.option(
-    "-p", "--pipeline",
+    "-p",
+    "--pipeline",
     "pipeline_config",
     help="Pipeline configuration file (TOML/YAML format)",
 )
@@ -225,7 +226,10 @@ def pipeline_submit(
     from llmq.cli.submit import run_pipeline_submit
 
     # Show deprecation warning
-    click.echo("⚠️  WARNING: This command is deprecated. Use 'llmq submit -p PIPELINE_CONFIG JOBS_SOURCE' instead.", err=True)
+    click.echo(
+        "⚠️  WARNING: This command is deprecated. Use 'llmq submit -p PIPELINE_CONFIG JOBS_SOURCE' instead.",
+        err=True,
+    )
 
     # Parse column mapping from CLI format
     mapping_dict = {}
@@ -253,7 +257,8 @@ def pipeline_submit(
 @cli.command()
 @click.argument("queue_name", required=False)
 @click.option(
-    "-p", "--pipeline",
+    "-p",
+    "--pipeline",
     "pipeline_config",
     help="Pipeline configuration file (YAML format)",
 )
@@ -282,7 +287,11 @@ def status(queue_name: Optional[str] = None, pipeline_config: Optional[str] = No
     # Visualize pipeline status
     llmq status -p example-pipeline.yaml
     """
-    from llmq.cli.monitor import show_status, show_connection_status, show_pipeline_status
+    from llmq.cli.monitor import (
+        show_status,
+        show_connection_status,
+        show_pipeline_status,
+    )
 
     if pipeline_config:
         # Pipeline mode: llmq status -p pipeline.yaml
@@ -317,12 +326,15 @@ def errors(queue_name: str, limit: int):
 @cli.command()
 @click.argument("queue_name_or_pipeline", required=False)
 @click.option(
-    "-p", "--pipeline",
+    "-p",
+    "--pipeline",
     "pipeline_config",
     help="Pipeline configuration file (TOML/YAML format)",
 )
 @click.option("--timeout", default=300, help="Timeout in seconds to wait for results")
-def receive(queue_name_or_pipeline: Optional[str], pipeline_config: Optional[str], timeout: int):
+def receive(
+    queue_name_or_pipeline: Optional[str], pipeline_config: Optional[str], timeout: int
+):
     """Receive results from a queue or pipeline
 
     Usage patterns:
@@ -352,7 +364,9 @@ def receive(queue_name_or_pipeline: Optional[str], pipeline_config: Optional[str
     else:
         # Regular queue mode: llmq receive queue-name
         if queue_name_or_pipeline is None:
-            click.echo("Error: queue name is required when not using -p/--pipeline flag")
+            click.echo(
+                "Error: queue name is required when not using -p/--pipeline flag"
+            )
             raise click.Abort()
 
         run_receive(queue_name_or_pipeline, timeout)
@@ -386,7 +400,10 @@ def receive_pipeline(pipeline_config_path: str, timeout: int):
     from llmq.cli.receive import run_pipeline_receive
 
     # Show deprecation warning
-    click.echo("⚠️  WARNING: This command is deprecated. Use 'llmq receive -p PIPELINE_CONFIG' instead.", err=True)
+    click.echo(
+        "⚠️  WARNING: This command is deprecated. Use 'llmq receive -p PIPELINE_CONFIG' instead.",
+        err=True,
+    )
 
     run_pipeline_receive(pipeline_config_path, timeout)
 
@@ -497,17 +514,6 @@ def worker_semhash(
     from llmq.cli.worker import run_semhash_worker
 
     run_semhash_worker(queue_name, batch_size, mode, concurrency)
-
-
-@worker.command("filter")
-@click.argument("queue_name")
-@click.argument("filter_field")
-@click.argument("filter_value")
-def worker_filter(queue_name: str, filter_field: str, filter_value: str):
-    """Run filter worker for simple job filtering"""
-    from llmq.cli.worker import run_filter_worker
-
-    run_filter_worker(queue_name, filter_field, filter_value)
 
 
 @worker.command("pipeline")

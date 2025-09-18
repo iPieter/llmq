@@ -1,6 +1,7 @@
 import asyncio
 from datetime import datetime
 from pathlib import Path
+from typing import Dict, Optional
 
 from rich.console import Console
 from rich.table import Table
@@ -11,6 +12,7 @@ from rich.box import ROUNDED
 from llmq.core.config import get_config
 from llmq.core.broker import BrokerManager
 from llmq.core.pipeline import PipelineConfig
+from llmq.core.models import QueueStats
 from llmq.utils.logging import setup_logging
 
 
@@ -358,7 +360,7 @@ async def get_pipeline_stats_async(pipeline_config: PipelineConfig):
     try:
         await broker.connect()
 
-        pipeline_stats = {}
+        pipeline_stats: Dict[str, Optional[QueueStats]] = {}
 
         # Get stats for each stage queue
         for stage in pipeline_config.stages:
@@ -366,16 +368,16 @@ async def get_pipeline_stats_async(pipeline_config: PipelineConfig):
             try:
                 stats = await broker.get_queue_stats(queue_name)
                 pipeline_stats[stage.name] = stats
-            except Exception as e:
+            except Exception:
                 pipeline_stats[stage.name] = None
 
         # Get stats for results queue
         results_queue = pipeline_config.get_pipeline_results_queue_name()
         try:
             results_stats = await broker.get_queue_stats(results_queue)
-            pipeline_stats['results'] = results_stats
-        except Exception as e:
-            pipeline_stats['results'] = None
+            pipeline_stats["results"] = results_stats
+        except Exception:
+            pipeline_stats["results"] = None
 
         return pipeline_stats
 
@@ -393,7 +395,9 @@ def show_pipeline_status(pipeline_config_path: str):
         # Load pipeline configuration
         pipeline_path = Path(pipeline_config_path)
         if not pipeline_path.exists():
-            console.print(f"[red]Error: Pipeline configuration file not found: {pipeline_config_path}[/red]")
+            console.print(
+                f"[red]Error: Pipeline configuration file not found: {pipeline_config_path}[/red]"
+            )
             return
 
         try:
@@ -416,12 +420,14 @@ def show_pipeline_status(pipeline_config_path: str):
 
         # Create pipeline visualization
         console.print()
-        console.print(Panel(
-            f"[bold cyan]{pipeline_config.name}[/bold cyan]",
-            title="Pipeline Status",
-            subtitle=f"Configuration: {pipeline_config_path}",
-            box=ROUNDED
-        ))
+        console.print(
+            Panel(
+                f"[bold cyan]{pipeline_config.name}[/bold cyan]",
+                title="Pipeline Status",
+                subtitle=f"Configuration: {pipeline_config_path}",
+                box=ROUNDED,
+            )
+        )
 
         # Create stages table
         stages_table = Table(title="Pipeline Stages", box=ROUNDED)
@@ -442,8 +448,16 @@ def show_pipeline_status(pipeline_config_path: str):
                 consumers = "N/A"
                 status = "[red]ERROR[/red]"
             else:
-                messages = str(stage_stats.message_count) if stage_stats.message_count is not None else "N/A"
-                consumers = str(stage_stats.consumer_count) if stage_stats.consumer_count is not None else "N/A"
+                messages = (
+                    str(stage_stats.message_count)
+                    if stage_stats.message_count is not None
+                    else "N/A"
+                )
+                consumers = (
+                    str(stage_stats.consumer_count)
+                    if stage_stats.consumer_count is not None
+                    else "N/A"
+                )
 
                 # Determine status based on consumers and message count
                 if stage_stats.consumer_count == 0:
@@ -459,18 +473,13 @@ def show_pipeline_status(pipeline_config_path: str):
                 stage_name += " →"
 
             stages_table.add_row(
-                stage_name,
-                stage.worker,
-                queue_name,
-                messages,
-                consumers,
-                status
+                stage_name, stage.worker, queue_name, messages, consumers, status
             )
 
         console.print(stages_table)
 
         # Show results queue
-        results_stats = pipeline_stats.get('results')
+        results_stats = pipeline_stats.get("results")
         results_queue = pipeline_config.get_pipeline_results_queue_name()
 
         results_table = Table(title="Pipeline Results", box=ROUNDED)
@@ -482,7 +491,11 @@ def show_pipeline_status(pipeline_config_path: str):
             ready_results = "N/A"
             status = "[red]ERROR[/red]"
         else:
-            ready_results = str(results_stats.message_count) if results_stats.message_count is not None else "N/A"
+            ready_results = (
+                str(results_stats.message_count)
+                if results_stats.message_count is not None
+                else "N/A"
+            )
             if results_stats.message_count and results_stats.message_count > 0:
                 status = "[green]RESULTS AVAILABLE[/green]"
             else:
@@ -516,7 +529,7 @@ def show_pipeline_status(pipeline_config_path: str):
         flow_text.append(" → ", style="dim")
 
         # Results queue status
-        results_stats = pipeline_stats.get('results')
+        results_stats = pipeline_stats.get("results")
         if results_stats is None:
             color = "red"
         elif results_stats.message_count and results_stats.message_count > 0:
@@ -539,28 +552,38 @@ def show_pipeline_status(pipeline_config_path: str):
                 stages_without_consumers.append(stage.name)
 
         if stages_without_consumers:
-            warnings.append(f"Stages without workers: {', '.join(stages_without_consumers)}")
+            warnings.append(
+                f"Stages without workers: {', '.join(stages_without_consumers)}"
+            )
 
         # Check for high backlogs
         stages_with_backlog = []
         for stage in pipeline_config.stages:
             stage_stats = pipeline_stats.get(stage.name)
-            if stage_stats and stage_stats.message_count and stage_stats.message_count > 1000:
-                stages_with_backlog.append(f"{stage.name} ({stage_stats.message_count} msgs)")
+            if (
+                stage_stats
+                and stage_stats.message_count
+                and stage_stats.message_count > 1000
+            ):
+                stages_with_backlog.append(
+                    f"{stage.name} ({stage_stats.message_count} msgs)"
+                )
 
         if stages_with_backlog:
             warnings.append(f"High backlog in: {', '.join(stages_with_backlog)}")
 
         if warnings:
             warning_text = "\n".join(f"• {warning}" for warning in warnings)
-            console.print(Panel(
-                f"[yellow]{warning_text}[/yellow]",
-                title="⚠️  Warnings",
-                box=ROUNDED
-            ))
+            console.print(
+                Panel(
+                    f"[yellow]{warning_text}[/yellow]", title="⚠️  Warnings", box=ROUNDED
+                )
+            )
 
         # Show timestamp
-        console.print(f"[dim]Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/dim]")
+        console.print(
+            f"[dim]Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/dim]"
+        )
 
     except Exception as e:
         logger = setup_logging("llmq.cli.monitor")
