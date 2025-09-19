@@ -17,10 +17,12 @@ def resolve_template_string(template: str, data: Dict[str, Any]) -> str:
         return template
 
 
-def resolve_template_messages(template_messages: List[Dict[str, Any]], data: Dict[str, Any]) -> List[Dict[str, Any]]:
+def resolve_template_messages(
+    template_messages: List[Dict[str, Any]], data: Dict[str, Any]
+) -> List[Dict[str, Any]]:
     """Resolve template variables in messages using data."""
     resolved_messages = []
-    
+
     for message in template_messages:
         if isinstance(message, dict):
             resolved_message = {}
@@ -32,7 +34,7 @@ def resolve_template_messages(template_messages: List[Dict[str, Any]], data: Dic
             resolved_messages.append(resolved_message)
         else:
             resolved_messages.append(message)
-    
+
     return resolved_messages
 
 
@@ -42,8 +44,7 @@ def format_json_template(json_obj: Any, data: Dict[str, Any]) -> Any:
         return resolve_template_string(json_obj, data)
     elif isinstance(json_obj, dict):
         return {
-            key: format_json_template(value, data)
-            for key, value in json_obj.items()
+            key: format_json_template(value, data) for key, value in json_obj.items()
         }
     elif isinstance(json_obj, list):
         return [format_json_template(value, data) for value in json_obj]
@@ -54,27 +55,27 @@ def format_json_template(json_obj: Any, data: Dict[str, Any]) -> Any:
 def validate_required_fields(data: Dict[str, Any], template_str: str) -> List[str]:
     """Extract and validate required template variables from a string."""
     import re
-    
+
     # Find all {variable} patterns
-    variables = re.findall(r'\{([^}]+)\}', template_str)
+    variables = re.findall(r"\{([^}]+)\}", template_str)
     missing_vars = []
-    
+
     for var in variables:
         if var not in data:
             missing_vars.append(var)
-    
+
     return missing_vars
 
 
 def create_job_from_data(
-    item: Dict[str, Any], 
+    item: Dict[str, Any],
     index: int,
     column_mapping: Dict[str, str],
-    job_id_prefix: str = "job"
+    job_id_prefix: str = "job",
 ) -> Dict[str, Any]:
     """Create a job dictionary from data item using column mapping."""
     import uuid
-    
+
     job_data: Dict[str, Any] = {
         "id": f"{job_id_prefix}-{index:08d}-{uuid.uuid4().hex[:8]}"
     }
@@ -82,7 +83,7 @@ def create_job_from_data(
     # Apply column mapping
     for job_field, mapping_value in column_mapping.items():
         logger.debug(f"Processing mapping: {job_field} = {mapping_value}")
-        
+
         if (mapping_value.startswith("{") and mapping_value.endswith("}")) or (
             mapping_value.startswith("[") and mapping_value.endswith("]")
         ):
@@ -114,7 +115,9 @@ def create_job_from_data(
     return job_data
 
 
-def ensure_job_has_prompt_or_messages(job_data: Dict[str, Any], item: Dict[str, Any]) -> Dict[str, Any]:
+def ensure_job_has_prompt_or_messages(
+    job_data: Dict[str, Any], item: Dict[str, Any]
+) -> Dict[str, Any]:
     """Ensure job has either prompt or messages field."""
     if "messages" not in job_data and "prompt" not in job_data:
         # Fallback: use text column as prompt if available
@@ -124,9 +127,9 @@ def ensure_job_has_prompt_or_messages(job_data: Dict[str, Any], item: Dict[str, 
             raise ValueError(
                 f"No messages or prompt could be created from item. Available keys: {list(item.keys())}"
             )
-    
+
     # Set chat_mode=True if we have messages
     if "messages" in job_data and job_data["messages"] is not None:
         job_data["chat_mode"] = True
-        
+
     return job_data
