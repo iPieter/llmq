@@ -5,6 +5,7 @@ import signal
 import time
 from typing import Dict, Optional, Iterator, Any
 from pathlib import Path
+import uuid
 
 from rich.console import Console
 from rich.progress import (
