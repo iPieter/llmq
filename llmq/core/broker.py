@@ -208,8 +208,14 @@ class BrokerManager:
         if not self.channel:
             raise RuntimeError("Not connected to RabbitMQ")
 
-        # Set up or get existing results queue (durable for resumability)
-        _, results_queue = await self.setup_queue_infrastructure(queue_name)
+        # Check if this is already a results queue (pipeline results or explicit results queue)
+        if queue_name.endswith(".results"):
+            # Direct results queue - just declare it
+            results_queue = await self.channel.declare_queue(queue_name, durable=True)
+        else:
+            # Regular queue - set up infrastructure and get results queue
+            _, results_queue = await self.setup_queue_infrastructure(queue_name)
+
         await results_queue.consume(callback)
         return results_queue
 

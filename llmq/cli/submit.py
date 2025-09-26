@@ -150,61 +150,12 @@ class JobSubmitter:
                 )
                 self.logger.info(f"Dataset item {index} text preview: {text_preview}")
 
-        # Apply column mapping
-        for job_field, mapping_value in self.column_mapping.items():
-            self.logger.debug(f"Processing mapping: {job_field} = {mapping_value}")
-            if mapping_value.startswith("[") and mapping_value.endswith("]"):
-                # Handle JSON mapping for complex fields like messages
-                try:
-                    # Parse as JSON and format any template strings
-                    import json as json_module
-
-                    json_template = json_module.loads(mapping_value)
-                    job_data[job_field] = self._format_json_template(
-                        json_template, item
-                    )
-                except json_module.JSONDecodeError as e:
-                    self.logger.error(
-                        f"Invalid JSON in mapping for field '{job_field}': {mapping_value}. Error: {e}"
-                    )
-                    # Don't set the field at all if JSON parsing fails
-                    continue
-            elif "{" in mapping_value and "}" in mapping_value:
-                # Handle template string mapping
-                try:
-                    job_data[job_field] = mapping_value.format(**item)
-                except KeyError as e:
-                    self.logger.warning(
-                        f"Template variable {e} not found in dataset item for field '{job_field}'"
-                    )
-            elif mapping_value in item:
-                # Simple column mapping
-                job_data[job_field] = item[mapping_value]
-            else:
-                self.logger.warning(
-                    f"Column '{mapping_value}' not found in dataset item. Available columns: {list(item.keys())}"
-                )
-
         # If no mapping provided and 'text' column exists, use it as prompt
         if not self.column_mapping and "text" in item:
             job_data["prompt"] = str(item["text"])
 
-        # Don't add any additional fields - only keep what was explicitly mapped
-        # The column_mapping processing above already handled all the mapped fields
-
-        # Set chat_mode=True if we have messages
-        if "messages" in job_data and job_data["messages"] is not None:
-            job_data["chat_mode"] = True
-
-        # Ensure we have either prompt or messages
-        if "messages" not in job_data and "prompt" not in job_data:
-            # Fallback: use text column as prompt if available
-            if "text" in item:
-                job_data["prompt"] = str(item["text"])
-            else:
-                raise ValueError(
-                    f"No messages or prompt could be created from item. Available keys: {list(item.keys())}"
-                )
+        # Apply template processing
+        job_data = self._enhance_job_with_templates(job_data, item)
 
         return Job(**job_data)
 
@@ -215,7 +166,7 @@ class JobSubmitter:
             try:
                 return json_obj.format(**item)
             except KeyError as e:
-                self.logger.warning(f"Template variable {e} not found in dataset item")
+                self.logger.warning(f"Template variable {e} not found in item")
                 return json_obj
         elif isinstance(json_obj, dict):
             # Recursively format dictionary values
@@ -229,6 +180,60 @@ class JobSubmitter:
         else:
             # Return as-is for other types
             return json_obj
+
+    def _enhance_job_with_templates(
+        self, job_data: Dict[str, Any], item: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """Apply column mapping templates to job data."""
+        import json as json_module
+
+        # Apply column mapping if available
+        for job_field, mapping_value in self.column_mapping.items():
+            self.logger.debug(f"Processing mapping: {job_field} = {mapping_value}")
+            if mapping_value.startswith("[") and mapping_value.endswith("]"):
+                # Handle JSON mapping for complex fields like messages
+                try:
+                    json_template = json_module.loads(mapping_value)
+                    job_data[job_field] = self._format_json_template(
+                        json_template, item
+                    )
+                except json_module.JSONDecodeError as e:
+                    self.logger.error(
+                        f"Invalid JSON in mapping for field '{job_field}': {mapping_value}. Error: {e}"
+                    )
+                    continue
+            elif "{" in mapping_value and "}" in mapping_value:
+                # Handle template string mapping
+                try:
+                    job_data[job_field] = mapping_value.format(**item)
+                except KeyError as e:
+                    self.logger.warning(
+                        f"Template variable {e} not found in item for field '{job_field}'"
+                    )
+            elif mapping_value in item:
+                # Simple column mapping
+                job_data[job_field] = item[mapping_value]
+            else:
+                self.logger.warning(
+                    f"Column '{mapping_value}' not found in item. Available columns: {list(item.keys())}"
+                )
+
+        # Set chat_mode=True if we have messages
+        if "messages" in job_data and job_data["messages"] is not None:
+            job_data["chat_mode"] = True
+
+        # Ensure we have either prompt or messages
+        if "messages" not in job_data and "prompt" not in job_data:
+            # Fallback: use text column as prompt if available
+            if "text" in item:
+                job_data["prompt"] = str(item["text"])
+            elif not self.column_mapping:
+                # Only raise error if no mapping was provided
+                raise ValueError(
+                    f"No messages or prompt could be created from item. Available keys: {list(item.keys())}"
+                )
+
+        return job_data
 
     def _signal_handler(self, signum: int, frame: Any) -> None:
         """Handle Ctrl+C gracefully - stop submitting, wait for pending results."""
@@ -459,6 +464,13 @@ class JobSubmitter:
 
                     try:
                         job_data = json.loads(line)
+
+                        # Apply pipeline templates if job doesn't have prompt/messages
+                        if "prompt" not in job_data and "messages" not in job_data:
+                            job_data = self._enhance_job_with_templates(
+                                job_data, job_data
+                            )
+
                         job = Job(**job_data)
                         chunk.append(job)
 
@@ -652,6 +664,28 @@ class PipelineSubmitter:
             return True
         return False
 
+    def _extract_pipeline_templates(self) -> Dict[str, str]:
+        """Extract templates from first pipeline stage config."""
+        import json as json_module
+
+        first_stage = self.pipeline_config.stages[0]
+        stage_config = first_stage.config or {}
+
+        templates = {}
+
+        # Extract messages template from stage config
+        if "messages" in stage_config:
+            try:
+                templates["messages"] = json_module.dumps(stage_config["messages"])
+            except Exception as e:
+                self.logger.warning(f"Failed to serialize messages template: {e}")
+
+        # Extract prompt template from stage config
+        if "prompt" in stage_config:
+            templates["prompt"] = str(stage_config["prompt"])
+
+        return templates
+
     def _signal_handler(self, signum: int, frame: Any) -> None:
         """Handle Ctrl+C gracefully."""
         if not self.shutting_down:
@@ -698,12 +732,16 @@ class PipelineSubmitter:
                 f"[green]Submitting jobs to first stage: {first_stage.name}[/green]"
             )
 
+            # Extract pipeline templates and merge with user column mapping
+            pipeline_templates = self._extract_pipeline_templates()
+            enhanced_column_mapping = {**pipeline_templates, **self.column_mapping}
+
             # Use existing JobSubmitter logic for the first stage
             first_stage_submitter = JobSubmitter(
                 first_stage_queue,
                 self.jobs_source,
                 self.timeout,
-                self.column_mapping,
+                enhanced_column_mapping,
                 self.max_samples,
                 self.split,
                 self.subset,
