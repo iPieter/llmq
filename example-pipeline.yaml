@@ -3,14 +3,14 @@ stages:
   - name: translation
     worker: vllm
     config:
-      model: "Unbabel/Tower-Plus-9B"
+      model: "Unbabel/Tower-Plus-2B"
       messages:
         - role: "user"
           content: "Translate the following {source_lang} source text to English:\n{source_lang}: {source_text}\nEnglish: "
   - name: formatting
     worker: vllm
     config:
-      model: "google/gemma-2-9b-it"
+      model: "google/gemma-2-2b-it"
       messages:
         - role: "user"
           content: "Clean up and format the following translated text with proper markdown formatting. Keep the meaning intact but improve readability:\n\n{translated_text}"

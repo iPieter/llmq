@@ -232,8 +232,8 @@ llmq status <queue-name>
 ```bash
 # Start workers for pipeline stages
 llmq worker pipeline pipeline.yaml <stage-name>
-llmq worker pipeline example-pipeline.yaml translation    # First stage
-llmq worker pipeline example-pipeline.yaml formatting     # Second stage
+CUDA_VISIBLE_DEVICES="0" llmq worker pipeline example-pipeline.yaml translation    # First stage
+CUDA_VISIBLE_DEVICES="1" llmq worker pipeline example-pipeline.yaml formatting     # Second stage
 
 # Multiple workers per stage: run command multiple times
 ```
