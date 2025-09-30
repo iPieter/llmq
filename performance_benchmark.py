@@ -110,6 +110,49 @@ class PerformanceBenchmark:
         self.queue_name = queue_name
         self.token_counter = TokenCounter(model_name)
         self.results: List[BenchmarkResult] = []
+        self.gpu_info = self._get_gpu_info()
+
+    def _get_gpu_info(self) -> Dict[str, Any]:
+        """Get GPU information using nvidia-smi."""
+        try:
+            result = subprocess.run(
+                [
+                    "nvidia-smi",
+                    "--query-gpu=index,name,memory.total",
+                    "--format=csv,noheader,nounits",
+                ],
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+
+            gpus = []
+            for line in result.stdout.strip().split("\n"):
+                if line.strip():
+                    parts = [p.strip() for p in line.split(",")]
+                    if len(parts) >= 3:
+                        gpus.append(
+                            {
+                                "index": int(parts[0]),
+                                "name": parts[1],
+                                "memory_mb": int(parts[2]),
+                            }
+                        )
+
+            return {
+                "gpu_count": len(gpus),
+                "gpus": gpus,
+                "cuda_visible_devices": os.environ.get("CUDA_VISIBLE_DEVICES", "all"),
+            }
+        except (subprocess.CalledProcessError, FileNotFoundError, ValueError):
+            return {
+                "gpu_count": 0,
+                "gpus": [],
+                "cuda_visible_devices": os.environ.get(
+                    "CUDA_VISIBLE_DEVICES", "unknown"
+                ),
+                "error": "Could not detect GPU information",
+            }
 
     def _parse_worker_logs(self, log_content: str) -> Dict[str, RequestTiming]:
         """Parse worker logs to extract timing information for each job."""
@@ -242,6 +285,16 @@ class PerformanceBenchmark:
         print(f"Dataset size: {dataset_size} samples")
         print(f"Model: {self.model_name}")
         print(f"Queue: {self.queue_name}")
+
+        # Print GPU info
+        if "error" not in self.gpu_info:
+            print(f"GPUs detected: {self.gpu_info['gpu_count']}")
+            for gpu in self.gpu_info["gpus"]:
+                print(f"  - GPU {gpu['index']}: {gpu['name']} ({gpu['memory_mb']} MB)")
+            print(f"CUDA_VISIBLE_DEVICES: {self.gpu_info['cuda_visible_devices']}")
+        else:
+            print(f"GPU detection: {self.gpu_info.get('error', 'Unknown error')}")
+
         print("-" * 60)
 
         results = []
@@ -274,9 +327,6 @@ class PerformanceBenchmark:
         worker_log_file = None
 
         try:
-            # Clear any existing jobs and results
-            await self._clear_queue()
-
             # Start worker in background and capture logs
             print(f"  Starting worker with batch size {batch_size}...")
 
@@ -310,7 +360,11 @@ class PerformanceBenchmark:
             submit_start_time = time.time()
 
             # Build the prompt template for translation
-            prompt_template = "Translate the following Dutch source text to English:\nDutch:{text}\nEnglish: "
+            # Note: Use actual newline in the string, not \n literal
+            prompt_template = "Translate the following Dutch source text to English:\\nDutch:{text}\\nEnglish: "
+
+            # Build the --map argument - this is passed directly to subprocess, no shell escaping needed
+            map_arg = f'messages=[{{"role": "user", "content": "{prompt_template}"}}]'
 
             submit_process = await asyncio.create_subprocess_exec(
                 sys.executable,
@@ -320,7 +374,7 @@ class PerformanceBenchmark:
                 self.queue_name,
                 dataset_name,
                 "--map",
-                f'messages=[{{"role": "user", "content": "{prompt_template}"}}]',
+                map_arg,
                 "--max-samples",
                 str(dataset_size),
                 stdout=asyncio.subprocess.PIPE,
@@ -483,8 +537,6 @@ class PerformanceBenchmark:
             dataset_file = f.name
 
         try:
-            # Clear any existing jobs and results
-            await self._clear_queue()
 
             # Start worker in background and capture logs
             print(f"  Starting worker with batch size {batch_size}...")
@@ -886,23 +938,6 @@ class PerformanceBenchmark:
             f"Worker did not become ready within {timeout_minutes} minutes"
         )
 
-    async def _clear_queue(self):
-        """Clear existing jobs from queue."""
-        try:
-            # Try to purge queue (this might fail if queue doesn't exist yet)
-            process = await asyncio.create_subprocess_exec(
-                sys.executable,
-                "-m",
-                "llmq",
-                "status",
-                self.queue_name,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            await process.wait()
-        except Exception:
-            pass  # Queue might not exist yet
-
     def _print_result(self, result: BenchmarkResult):
         """Print formatted benchmark result."""
         print("  Results:")
@@ -983,6 +1018,7 @@ class PerformanceBenchmark:
             "model": self.model_name,
             "queue": self.queue_name,
             "timestamp": datetime.now().isoformat(),
+            "gpu_info": self.gpu_info,
             "results": [
                 {
                     "batch_size": r.batch_size,
