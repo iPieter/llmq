@@ -227,51 +227,6 @@ class PerformanceBenchmark:
 
         return timings
 
-    def create_translation_dataset(self, size: int = 100) -> List[Dict[str, Any]]:
-        """Create a simple translation dataset for benchmarking."""
-        # Sample texts of varying lengths for realistic testing
-        sample_texts = [
-            "Hello world",
-            "This is a simple sentence for translation testing.",
-            "The quick brown fox jumps over the lazy dog in this longer example.",
-            "Machine translation has evolved significantly with the advent of neural networks and transformer architectures.",
-            "In the realm of artificial intelligence, large language models have revolutionized how we approach natural language processing tasks, including but not limited to translation, summarization, and text generation.",
-            "The complexity of human language presents unique challenges for computational systems attempting to understand and generate natural text.",
-            "Deep learning models, particularly those based on the transformer architecture, have demonstrated remarkable capabilities in capturing semantic relationships between words and phrases.",
-            "Modern translation systems utilize attention mechanisms to focus on relevant parts of the source text when generating target language output.",
-            "This is a medium-length sentence that contains enough content to generate a reasonable number of tokens for benchmarking purposes while still being manageable.",
-            "Short text.",
-        ]
-
-        languages = ["German", "French", "Spanish", "Italian", "Dutch", "Portuguese"]
-
-        dataset = []
-        for i in range(size):
-            text = sample_texts[i % len(sample_texts)]
-            source_lang = languages[i % len(languages)]
-
-            job = {
-                "id": f"bench-{i:05d}",
-                "messages": [
-                    {
-                        "role": "user",
-                        "content": f"Translate the following {source_lang} source text to English:\n{source_lang}: {text}\nEnglish: ",
-                    }
-                ],
-            }
-            dataset.append(job)
-
-        return dataset
-
-    def calculate_tokens(self, dataset: List[Dict[str, Any]]) -> int:
-        """Calculate total input tokens for the dataset."""
-        total_tokens = 0
-        for job in dataset:
-            if "messages" in job:
-                for message in job["messages"]:
-                    total_tokens += self.token_counter.count_tokens(message["content"])
-        return total_tokens
-
     async def run_benchmark(
         self,
         batch_sizes: List[int],
