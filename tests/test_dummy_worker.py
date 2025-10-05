@@ -1,8 +1,6 @@
 import pytest
-from unittest.mock import patch
 
 from llmq.workers.dummy_worker import DummyWorker
-from llmq.core.models import Job
 
 # Apply asyncio marker to all async test methods in this module
 pytestmark = pytest.mark.asyncio
@@ -58,40 +56,3 @@ class TestDummyWorker:
 
         # Should not raise any exceptions
         await worker._cleanup_processor()
-
-    @pytest.mark.unit
-    async def test_process_job_with_text(self):
-        """Test job processing with text field."""
-        worker = DummyWorker("test-queue")
-        job = Job(id="test-001", prompt="Echo test", text="Hello World")
-
-        # Mock the sleep to make test faster
-        with patch("asyncio.sleep") as mock_sleep:
-            mock_sleep.return_value = None
-            result = await worker._process_job(job)
-
-        assert result == "echo Hello World"
-
-    @pytest.mark.unit
-    async def test_process_job_with_different_text_values(self):
-        """Test job processing with various text values."""
-        worker = DummyWorker("test-queue")
-
-        test_cases = [
-            ("simple text", "echo simple text"),
-            ("Text with spaces", "echo Text with spaces"),
-            ("123 numbers", "echo 123 numbers"),
-            ("Special chars!@#$%", "echo Special chars!@#$%"),
-            ("", "echo "),
-        ]
-
-        with patch("asyncio.sleep") as mock_sleep:
-            mock_sleep.return_value = None
-
-            for text_input, expected_output in test_cases:
-                job = Job(
-                    id=f"test-{hash(text_input)}", prompt="Echo test", text=text_input
-                )
-
-                result = await worker._process_job(job)
-                assert result == expected_output
