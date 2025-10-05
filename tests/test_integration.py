@@ -1,7 +1,7 @@
 import asyncio
 import pytest
 import os
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Optional
 
 from llmq.workers.dummy_worker import DummyWorker
 from llmq.core.broker import BrokerManager
@@ -13,7 +13,7 @@ pytestmark = pytest.mark.asyncio
 
 
 @pytest.fixture
-async def rabbitmq_url() -> str:
+async def rabbitmq_url() -> Optional[str]:
     """Get RabbitMQ URL for integration tests."""
     # Check environment variable first, otherwise skip tests
     url = os.environ.get("RABBITMQ_URL")
@@ -85,7 +85,7 @@ class TestDummyWorkerIntegration:
             # Submit a job
             test_job = Job(  # type: ignore
                 id="integration-test-job-001",
-                prompt="{text}",
+                messages=[{"user": "{text}"}],
                 text="Test prompt with integration test",
             )
 
@@ -153,7 +153,7 @@ class TestDummyWorkerIntegration:
             for i in range(3):
                 job = Job(  # type: ignore
                     id=f"integration-test-job-{i:03d}",
-                    prompt=f"Job {i}: Hello from job {i}",
+                    messages=[{"user": f"Job {i}: Hello from job {i}"}],
                 )
                 jobs.append(job)
                 await broker.publish_job(test_queue_name, job)
@@ -226,7 +226,8 @@ class TestDummyWorkerIntegration:
         jobs = []
         for i in range(3):
             job = Job(  # type: ignore
-                id=f"status-test-job-{i:03d}", prompt=f"Status test job {i}"
+                id=f"status-test-job-{i:03d}",
+                messages=[{"user": f"Hello from job {i}"}],
             )
             jobs.append(job)
             await broker.publish_job(test_queue_name, job)
