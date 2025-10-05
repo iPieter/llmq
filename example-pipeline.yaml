@@ -10,7 +10,7 @@ stages:
   - name: formatting
     worker: vllm
     config:
-      model: "google/gemma-3-270m"
+      model: "google/gemma-3-270m-it"
       messages:
         - role: "user"
           content: "Clean up and format the following translated text with proper markdown formatting. Keep the meaning intact but improve readability:\n\n{output}"
