@@ -6,14 +6,14 @@ stages:
       model: "Unbabel/Tower-Plus-2B"
       messages:
         - role: "user"
-          content: "Translate the following {source_lang} source text to English:\n{source_lang}: {source_text}\nEnglish: "
+          content: "Translate the following Dutch source text to English:\nDutch: {text}\nEnglish: "
   - name: formatting
     worker: vllm
     config:
-      model: "google/gemma-2-2b-it"
+      model: "google/gemma-3-270m"
       messages:
         - role: "user"
-          content: "Clean up and format the following translated text with proper markdown formatting. Keep the meaning intact but improve readability:\n\n{translated_text}"
+          content: "Clean up and format the following translated text with proper markdown formatting. Keep the meaning intact but improve readability:\n\n{output}"
 config:
   timeout_minutes: 120
   retry_count: 2

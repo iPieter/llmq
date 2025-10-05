@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from typing import Optional, Callable, Any
+from typing import Optional, Callable, Any, Dict
 from urllib.parse import urlparse
 import aio_pika
 from aio_pika.abc import (
@@ -13,6 +13,7 @@ import httpx
 
 from llmq.core.config import get_config
 from llmq.core.models import Job, Result, QueueStats
+from llmq.core.pipeline import PipelineConfig
 
 
 class BrokerManager:
@@ -148,6 +149,7 @@ class BrokerManager:
         stage_name: str,
         stages: list[str],
         result: Result,
+        pipeline_config: Optional[list[PipelineConfig]],
     ) -> None:
         """Publish a pipeline result - either to next stage or final results."""
         if not self.channel:
@@ -173,11 +175,18 @@ class BrokerManager:
             next_stage = stages[current_stage_idx + 1]
             next_stage_queue = f"pipeline.{pipeline_name}.{next_stage}"
 
-            # Convert result to next stage job, preserving metadata
             extra_fields = result.model_extra if result.model_extra else {}
+
+            # Convert result to next stage job with message formatting, preserving metadata
+            if pipeline_config is not None:
+                stage_config = pipeline_config[current_stage_idx + 1]
+                extra_fields["messages"] = stage_config.config["messages"]  # type: ignore
+                extra_fields = self._format_json_template(
+                    extra_fields, {"output": result.result}
+                )
+
             next_job = Job(
                 id=result.id,  # Keep same ID for tracking
-                prompt=result.result,  # Previous result becomes next prompt
                 **extra_fields,
             )
 
@@ -191,6 +200,28 @@ class BrokerManager:
                 message, routing_key=next_stage_queue
             )
             self.logger.info(f"Pipeline result routed: {stage_name} -> {next_stage}")
+
+    def _format_json_template(self, json_obj: Any, item: Dict[str, Any]) -> Any:
+        """Recursively format JSON template with dataset item values."""
+        if isinstance(json_obj, str):
+            # Format string templates
+            try:
+                return json_obj.format(**item)
+            except KeyError as e:
+                self.logger.warning(f"Template variable {e} not found in item")
+                return json_obj
+        elif isinstance(json_obj, dict):
+            # Recursively format dictionary values
+            return {
+                key: self._format_json_template(value, item)
+                for key, value in json_obj.items()
+            }
+        elif isinstance(json_obj, list):
+            # Recursively format list items
+            return [self._format_json_template(value, item) for value in json_obj]
+        else:
+            # Return as-is for other types
+            return json_obj
 
     async def consume_jobs(self, queue_name: str, callback: Callable) -> AbstractQueue:
         """Set up job consumption with the provided callback."""
