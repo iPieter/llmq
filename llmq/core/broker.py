@@ -13,7 +13,7 @@ import httpx
 
 from llmq.core.config import get_config
 from llmq.core.models import Job, Result, QueueStats
-from llmq.core.pipeline import PipelineConfig
+from llmq.core.pipeline import PipelineStage
 
 
 class BrokerManager:
@@ -149,7 +149,7 @@ class BrokerManager:
         stage_name: str,
         stages: list[str],
         result: Result,
-        pipeline_config: Optional[list[PipelineConfig]],
+        pipeline_config: Optional[list[PipelineStage]],
     ) -> None:
         """Publish a pipeline result - either to next stage or final results."""
         if not self.channel:
