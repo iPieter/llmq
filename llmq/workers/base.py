@@ -10,6 +10,7 @@ from aio_pika.abc import AbstractIncomingMessage
 from llmq.core.config import get_config
 from llmq.core.broker import BrokerManager
 from llmq.core.models import Job, Result
+from llmq.core.pipeline import PipelineConfig
 
 
 class BaseWorker(ABC):
@@ -23,6 +24,7 @@ class BaseWorker(ABC):
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
         pipeline_stages: Optional[list[str]] = None,
+        pipeline_config: Optional[list[PipelineConfig]] = None,
     ):
         self.queue_name = queue_name
         self.worker_id = worker_id or self._generate_worker_id()
@@ -34,6 +36,7 @@ class BaseWorker(ABC):
         self.stage_name = stage_name
         self.pipeline_stages = pipeline_stages
         self.is_pipeline_worker = pipeline_name is not None and stage_name is not None
+        self.pipeline_config = pipeline_config
 
         # Set up structured logging for workers
         from llmq.utils.logging import setup_logging
@@ -152,13 +155,10 @@ class BaseWorker(ABC):
             # Calculate duration
             duration_ms = (time.time() - start_time) * 1000
 
-            # Get prompt for result logging
             if job.messages:
-                # For chat jobs, create a summary of messages
                 prompt_for_result = f"Chat with {len(job.messages)} messages"
             else:
-                # For regular jobs, use formatted prompt
-                prompt_for_result = job.get_formatted_prompt()
+                prompt_for_result = "Empty messages"
 
             # Create result with required fields
             result = Result(
@@ -175,7 +175,7 @@ class BaseWorker(ABC):
             for key, value in job_dict.items():
                 if key not in [
                     "id",
-                    "prompt",
+                    "output",
                     "messages",
                     "chat_mode",
                     "result",
@@ -203,6 +203,7 @@ class BaseWorker(ABC):
                         self.stage_name,
                         self.pipeline_stages,
                         result,
+                        pipeline_config=self.pipeline_config,
                     )
                 else:
                     # Regular worker: publish to results queue

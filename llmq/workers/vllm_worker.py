@@ -5,6 +5,7 @@ from vllm import AsyncLLMEngine, SamplingParams  # type: ignore
 from vllm.engine.arg_utils import AsyncEngineArgs  # type: ignore
 
 from llmq.core.models import Job
+from llmq.core.pipeline import PipelineConfig
 from llmq.workers.base import BaseWorker
 
 
@@ -22,6 +23,7 @@ class VLLMWorker(BaseWorker):
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
         pipeline_stages: Optional[list[str]] = None,
+        pipeline_config: Optional[list[PipelineConfig]] = None,
     ):
         self.model_name = model_name
         self.tensor_parallel_size = tensor_parallel_size
@@ -33,6 +35,7 @@ class VLLMWorker(BaseWorker):
             pipeline_name,
             stage_name,
             pipeline_stages,
+            pipeline_config,
         )
         self.engine: Optional[AsyncLLMEngine] = None
 
@@ -166,7 +169,7 @@ class VLLMWorker(BaseWorker):
 
         results = []
 
-        # Prepare prompt based on chat mode
+        # Prepare prompt
         if job.chat_mode or job.messages:
             if not job.messages:
                 raise ValueError("Chat mode enabled but no messages provided")
@@ -176,8 +179,7 @@ class VLLMWorker(BaseWorker):
                 conversation=job.messages, tokenize=False, add_generation_prompt=True
             )
         else:
-            # Use traditional string prompt
-            prompt = job.get_formatted_prompt()
+            pass
 
         # Use generate method
         async for output in self.engine.generate(

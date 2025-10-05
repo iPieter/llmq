@@ -3,6 +3,7 @@ import random
 from typing import Optional
 
 from llmq.core.models import Job
+from llmq.core.pipeline import PipelineConfig
 from llmq.workers.base import BaseWorker
 
 
@@ -17,6 +18,7 @@ class DummyWorker(BaseWorker):
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
         pipeline_stages: Optional[list[str]] = None,
+        pipeline_config: Optional[list[PipelineConfig]] = None,
     ):
         super().__init__(
             queue_name,
@@ -25,6 +27,7 @@ class DummyWorker(BaseWorker):
             pipeline_name,
             stage_name,
             pipeline_stages,
+            pipeline_config,
         )
 
     def _generate_worker_id(self) -> str:

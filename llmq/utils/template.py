@@ -119,14 +119,10 @@ def ensure_job_has_prompt_or_messages(
     job_data: Dict[str, Any], item: Dict[str, Any]
 ) -> Dict[str, Any]:
     """Ensure job has either prompt or messages field."""
-    if "messages" not in job_data and "prompt" not in job_data:
-        # Fallback: use text column as prompt if available
-        if "text" in item:
-            job_data["prompt"] = str(item["text"])
-        else:
-            raise ValueError(
-                f"No messages or prompt could be created from item. Available keys: {list(item.keys())}"
-            )
+    if "messages" not in job_data:
+        raise ValueError(
+            f"No prompt could be created from item. Available keys: {list(item.keys())}"
+        )
 
     # Set chat_mode=True if we have messages
     if "messages" in job_data and job_data["messages"] is not None:

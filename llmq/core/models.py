@@ -5,7 +5,9 @@ from pydantic import BaseModel, Field, validator
 
 class Job(BaseModel):
     id: str = Field(..., description="Unique job identifier")
-    prompt: Optional[str] = Field(None, description="Template prompt with placeholders")
+    output: Optional[str] = Field(
+        None, description="Intermediate outputs when using pipelines"
+    )
     messages: Optional[List[Dict[str, Any]]] = Field(
         None, description="Chat messages for chat-based models"
     )
@@ -21,29 +23,18 @@ class Job(BaseModel):
 
     @validator("messages", always=True)
     def validate_prompt_or_messages(cls, v, values):
-        """Ensure either prompt OR messages is provided, not both or neither."""
-        prompt = values.get("prompt")
+        """Ensure either output OR messages is provided, not both or neither."""
+        output = values.get("output")
 
-        if prompt is not None and v is not None:
+        if output is not None and v is not None:
             raise ValueError(
-                "Cannot specify both 'prompt' and 'messages'. Use one or the other."
+                "Cannot specify both 'output' and 'messages'. Use one or the other."
             )
 
-        if prompt is None and v is None:
-            raise ValueError("Must specify either 'prompt' or 'messages'.")
+        if output is None and v is None:
+            raise ValueError("Must specify either 'output' or 'messages'.")
 
         return v
-
-    def get_formatted_prompt(self) -> str:
-        """Format the prompt template with job data, excluding id and prompt fields."""
-        if self.prompt is None:
-            raise ValueError("Cannot format prompt: prompt is None")
-        format_data = {
-            k: v
-            for k, v in self.model_dump().items()
-            if k not in ["id", "prompt", "messages", "chat_mode", "stop"]
-        }
-        return self.prompt.format(**format_data)
 
 
 class Result(BaseModel):

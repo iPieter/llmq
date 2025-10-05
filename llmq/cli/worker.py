@@ -188,6 +188,7 @@ def run_pipeline_worker(
                 pipeline_name=pipeline_config.name,
                 stage_name=stage_name,
                 pipeline_stages=pipeline_stages,
+                pipeline_config=pipeline_config.stages,
             )
 
         elif stage.worker == "dummy":
@@ -200,6 +201,7 @@ def run_pipeline_worker(
                 pipeline_name=pipeline_config.name,
                 stage_name=stage_name,
                 pipeline_stages=pipeline_stages,
+                pipeline_config=pipeline_config.stages,
             )
 
         elif stage.worker == "semhash":
