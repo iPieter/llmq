@@ -5,7 +5,7 @@ from vllm import AsyncLLMEngine, SamplingParams  # type: ignore
 from vllm.engine.arg_utils import AsyncEngineArgs  # type: ignore
 
 from llmq.core.models import Job
-from llmq.core.pipeline import PipelineConfig
+from llmq.core.pipeline import PipelineStage
 from llmq.workers.base import BaseWorker
 
 
@@ -23,7 +23,7 @@ class VLLMWorker(BaseWorker):
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
         pipeline_stages: Optional[list[str]] = None,
-        pipeline_config: Optional[list[PipelineConfig]] = None,
+        pipeline_config: Optional[list[PipelineStage]] = None,
     ):
         self.model_name = model_name
         self.tensor_parallel_size = tensor_parallel_size

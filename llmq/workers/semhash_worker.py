@@ -176,11 +176,7 @@ class SemHashWorker(BaseWorker):
             if contents:
                 return "\n".join(contents)
 
-        # Try formatted prompt as fallback
-        try:
-            return job.get_formatted_prompt()
-        except Exception:
-            return ""
+        return ""
 
     async def _cleanup_processor(self) -> None:
         """Clean up SemHash processor."""

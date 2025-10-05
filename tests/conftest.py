@@ -23,7 +23,9 @@ def mock_config():
 @pytest.fixture
 def sample_job():
     """Sample job for testing."""
-    return Job(id="test-job-001", prompt="Echo '{text}' back", text="Hello World")
+    return Job(
+        id="test-job-001", messages=[{"user": "Echo '{text}' back"}], text="Hello World"
+    )
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ from aio_pika.abc import AbstractIncomingMessage
 from llmq.core.config import get_config
 from llmq.core.broker import BrokerManager
 from llmq.core.models import Job, Result
-from llmq.core.pipeline import PipelineConfig
+from llmq.core.pipeline import PipelineStage
 
 
 class BaseWorker(ABC):
@@ -24,7 +24,7 @@ class BaseWorker(ABC):
         pipeline_name: Optional[str] = None,
         stage_name: Optional[str] = None,
         pipeline_stages: Optional[list[str]] = None,
-        pipeline_config: Optional[list[PipelineConfig]] = None,
+        pipeline_config: Optional[list[PipelineStage]] = None,
     ):
         self.queue_name = queue_name
         self.worker_id = worker_id or self._generate_worker_id()
